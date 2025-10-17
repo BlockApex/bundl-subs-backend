@@ -23,7 +23,77 @@
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository for Bundl Subs backend with Solana wallet integration.
+
+## Features
+
+- **User Management**: Solana wallet-based user registration with signature verification
+- **MongoDB Integration**: User data persistence with Mongoose
+- **Signature Verification**: Cryptographically secure wallet address verification using Solana signatures
+
+## User API
+
+### Login Endpoint
+
+**POST** `/user/login`
+
+Login with Solana wallet verification. Creates a new user if they don't exist, or logs in existing users.
+
+**Request Body:**
+```json
+{
+  "walletAddress": "string (required) - Solana wallet public key",
+  "signature": "string (required) - Signature of verification message",
+  "kycInfo": "object (optional) - Additional KYC information"
+}
+```
+
+**Response:**
+```json
+{
+  "walletAddress": "string",
+  "token": "string"
+}
+```
+
+### Protected Routes
+
+**GET** `/user/profile`
+
+Access user profile (requires authentication).
+
+**Headers:**
+```
+Authorization: Bearer <jwt-token>
+```
+
+**Response:**
+```json
+{
+  "walletAddress": "string",
+  "message": "This is a protected route"
+}
+```
+
+## Authentication
+
+The API uses JWT (JSON Web Tokens) for authentication:
+
+1. **Login**: Returns a JWT token upon successful authentication
+2. **Protected Routes**: Include the token in the `Authorization` header as `Bearer <token>`
+3. **Token Expiry**: Tokens expire after 7 days
+4. **Auto-registration**: New users are automatically created on first login
+
+## Environment Setup
+
+Create a `.env` file with the following variables:
+
+```env
+MONGODB_URI=mongodb://localhost:27017/bundl-subs
+PORT=3000
+VERIFY_WALLET_TEXT=Sign this message to verify your wallet address
+JWT_SECRET=your-super-secret-jwt-key
+```
 
 ## Project setup
 
