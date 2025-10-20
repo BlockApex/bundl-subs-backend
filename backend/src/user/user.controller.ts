@@ -5,8 +5,10 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import express from "express";
 import { AdminGuard } from "../auth/admin.guard";
 import { AuthGuard } from "../auth/auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -22,8 +24,20 @@ export class UserController {
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() loginDto: LoginDto,
+    @Res({ passthrough: true }) response: express.Response,
   ): Promise<{ walletAddress: string; token: string }> {
-    return this.userService.login(loginDto);
+    const { walletAddress, token } = await this.userService.login(loginDto);
+    response.cookie("token", token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+    });
+    return { walletAddress, token };
+  }
+
+  @Get("verification-message")
+  getVerificationMessage(): { message: string } {
+    return { message: this.userService.getVerificationMessage() };
   }
 
   @Get("profile")

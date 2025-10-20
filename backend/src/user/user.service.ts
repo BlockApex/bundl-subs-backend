@@ -69,7 +69,7 @@ export class UserService {
     return { exists: false, verificationMessage };
   }
 
-  private getVerificationMessage(): string {
+  getVerificationMessage(): string {
     return (
       this.configService.get("VERIFY_WALLET_TEXT") ||
       "Sign this message to verify your wallet address"

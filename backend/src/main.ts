@@ -1,6 +1,7 @@
 import { Logger, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
+import cookieParser from "cookie-parser";
 import { config } from "dotenv";
 import { AppModule } from "./app.module";
 config();
@@ -22,6 +23,7 @@ async function bootstrap() {
       transform: true,
     }),
   );
+  app.use(cookieParser());
 
   // Retrieve ConfigService
   const configService = app.get(ConfigService);
