@@ -24,8 +24,8 @@ export class CreateBundleDto {
 
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => OfferDto)
-  offers: OfferDto[];
+  @Type(() => PackageActiveOffers)
+  offers: PackageActiveOffers[];
 
   @IsString()
   frequency: string;
@@ -40,4 +40,14 @@ export class CreateBundleDto {
 export class CreatePresetBundleDto extends CreateBundleDto {
   @IsBoolean()
   isPreset: boolean;
+}
+
+export class PackageActiveOffers {
+  @IsString()
+  package: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OfferDto)
+  offers: OfferDto[];
 }

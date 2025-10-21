@@ -8,7 +8,7 @@ import {
 
 export type PackageDocument = Package & Document;
 
-@Schema({ _id: false })
+@Schema()
 export class Package {
   @Prop({ required: true })
   name: string;

@@ -12,8 +12,10 @@ import {
 } from "@nestjs/common";
 import { AdminGuard } from "../auth/admin.guard";
 import { AuthGuard } from "../auth/auth.guard";
-import { CreateBundleDto } from "./dto/create-bundle.dto";
-import { CreatePresetBundleDto } from "./dto/create-preset-bundle.dto";
+import {
+  CreateBundleDto,
+  CreatePresetBundleDto,
+} from "./dto/create-bundle.dto";
 import { CreateServiceDto } from "./dto/create-service.dto";
 import { DvmService } from "./dvm.service";
 
@@ -69,26 +71,24 @@ export class DvmController {
 
   // Bundle endpoints
   @Post("bundles")
-  @UseGuards(AdminGuard)
+  @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.CREATED)
   createBundle(@Body() createBundleDto: CreateBundleDto) {
     return this.dvmService.createBundle(createBundleDto);
   }
 
   @Get("bundles")
-  @UseGuards(AuthGuard)
   findAllBundles() {
     return this.dvmService.findAllBundles();
   }
 
   @Get("bundles/:id")
-  @UseGuards(AuthGuard)
   findBundleById(@Param("id") id: string) {
     return this.dvmService.findBundleById(id);
   }
 
   @Patch("bundles/:id")
-  @UseGuards(AdminGuard)
+  @UseGuards(AuthGuard)
   updateBundle(
     @Param("id") id: string,
     @Body() updateData: Partial<CreateBundleDto>,
@@ -112,30 +112,7 @@ export class DvmController {
   }
 
   @Get("preset-bundles")
-  @UseGuards(AuthGuard)
   findAllPresetBundles() {
     return this.dvmService.findAllPresetBundles();
-  }
-
-  @Get("preset-bundles/:id")
-  @UseGuards(AuthGuard)
-  findPresetBundleById(@Param("id") id: string) {
-    return this.dvmService.findPresetBundleById(id);
-  }
-
-  @Patch("preset-bundles/:id")
-  @UseGuards(AdminGuard)
-  updatePresetBundle(
-    @Param("id") id: string,
-    @Body() updateData: Partial<CreatePresetBundleDto>,
-  ) {
-    return this.dvmService.updatePresetBundle(id, updateData);
-  }
-
-  @Delete("preset-bundles/:id")
-  @UseGuards(AdminGuard)
-  @HttpCode(HttpStatus.NO_CONTENT)
-  deletePresetBundle(@Param("id") id: string) {
-    return this.dvmService.deletePresetBundle(id);
   }
 }

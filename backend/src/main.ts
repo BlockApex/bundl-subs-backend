@@ -1,17 +1,30 @@
 import { Logger, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
+import { ExpressAdapter } from "@nestjs/platform-express";
 import cookieParser from "cookie-parser";
 import { config } from "dotenv";
+import express from "express";
+import { readFileSync } from "fs";
+import http from "http";
+import https from "https";
 import { AppModule } from "./app.module";
+import { ShutdownObserver } from "./shutdown-observer";
 config();
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const httpsOptions = {
+    key: readFileSync("./secrets/private-key.pem"),
+    cert: readFileSync("./secrets/public-certificate.pem"),
+  };
+
+  const server = express();
+  const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
     logger: ["error", "warn", "log"],
     cors: {
-      origin: /orbitearn\.com$/,
+      origin: "*", ///orbitearn\.com$/,
       optionsSuccessStatus: 200,
+      credentials: true,
     },
   });
 
@@ -31,39 +44,21 @@ async function bootstrap() {
   // Read port from config (e.g., .env file)
   const port = configService.get<number>("PORT") || 3000;
 
-  await app.listen(port);
+  await app.init();
+  const httpServer = http.createServer(server).listen(port);
   new Logger("bootstrap").log(`🚀 App is running on http://localhost:${port}`);
+
+  const shutdownObserver = app.get(ShutdownObserver);
+  shutdownObserver.addHttpServer(httpServer);
+
+  // use https server if not production
+  if (configService.get<string>("NODE_ENV") !== "production") {
+    const httpsServer = https.createServer(httpsOptions, server).listen(443);
+    shutdownObserver.addHttpServer(httpsServer);
+  }
 }
+
 bootstrap().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-
-// import { Keypair } from "@solana/web3.js";
-// import base58 from "bs58";
-// import nacl from "tweetnacl";
-// import naclUtil from "tweetnacl-util";
-
-// function printSignature() {
-//   const keypair = Keypair.fromSecretKey(
-//     base58.decode(
-//       "<Private Key Here>",
-//     ),
-//   );
-
-//   const message = "Sign this message to verify your wallet address";
-//   const messageBytes = naclUtil.decodeUTF8(message);
-
-//   const signature = nacl.sign.detached(messageBytes, keypair.secretKey);
-//   console.log("Public Key:", keypair.publicKey.toBase58());
-//   console.log("Signature:", base58.encode(signature));
-
-//   const result = nacl.sign.detached.verify(
-//     messageBytes,
-//     signature,
-//     keypair.publicKey.toBytes(),
-//   );
-
-//   console.log("Verified:", result);
-// }
-// printSignature();

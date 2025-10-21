@@ -6,14 +6,12 @@ import {
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
-import { CreateBundleDto } from "./dto/create-bundle.dto";
-import { CreatePresetBundleDto } from "./dto/create-preset-bundle.dto";
+import {
+  CreateBundleDto,
+  CreatePresetBundleDto,
+} from "./dto/create-bundle.dto";
 import { CreateServiceDto } from "./dto/create-service.dto";
 import { Bundle, BundleDocument } from "./schemas/bundle.schema";
-import {
-  PresetBundle,
-  PresetBundleDocument,
-} from "./schemas/preset-bundle.schema";
 import { Service, ServiceDocument } from "./schemas/service.schema";
 
 @Injectable()
@@ -23,8 +21,6 @@ export class DvmService {
   constructor(
     @InjectModel(Service.name) private serviceModel: Model<ServiceDocument>,
     @InjectModel(Bundle.name) private bundleModel: Model<BundleDocument>,
-    @InjectModel(PresetBundle.name)
-    private presetBundleModel: Model<PresetBundleDocument>,
   ) {}
 
   // Service CRUD operations
@@ -135,68 +131,11 @@ export class DvmService {
   // Preset Bundle CRUD operations
   async createPresetBundle(
     createPresetBundleDto: CreatePresetBundleDto,
-  ): Promise<PresetBundle> {
-    try {
-      // Verify that the referenced bundle exists
-      const bundle = await this.bundleModel
-        .findById(createPresetBundleDto.bundle)
-        .exec();
-      if (!bundle) {
-        throw new BadRequestException("Referenced bundle does not exist");
-      }
-
-      const presetBundle = new this.presetBundleModel(createPresetBundleDto);
-      return await presetBundle.save();
-    } catch (error) {
-      this.logger.error("Error creating preset bundle:", error);
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      throw new BadRequestException("Failed to create preset bundle");
-    }
+  ): Promise<Bundle> {
+    return this.createBundle(createPresetBundleDto);
   }
 
-  async findAllPresetBundles(): Promise<PresetBundle[]> {
-    return this.presetBundleModel.find().populate("bundle").exec();
-  }
-
-  async findPresetBundleById(id: string): Promise<PresetBundle> {
-    const presetBundle = await this.presetBundleModel
-      .findById(id)
-      .populate("bundle")
-      .exec();
-    if (!presetBundle) {
-      throw new NotFoundException("Preset bundle not found");
-    }
-    return presetBundle;
-  }
-
-  async updatePresetBundle(
-    id: string,
-    updateData: Partial<CreatePresetBundleDto>,
-  ): Promise<PresetBundle> {
-    // If bundle is being updated, verify it exists
-    if (updateData.bundle) {
-      const bundle = await this.bundleModel.findById(updateData.bundle).exec();
-      if (!bundle) {
-        throw new BadRequestException("Referenced bundle does not exist");
-      }
-    }
-
-    const presetBundle = await this.presetBundleModel
-      .findByIdAndUpdate(id, updateData, { new: true })
-      .populate("bundle")
-      .exec();
-    if (!presetBundle) {
-      throw new NotFoundException("Preset bundle not found");
-    }
-    return presetBundle;
-  }
-
-  async deletePresetBundle(id: string): Promise<void> {
-    const result = await this.presetBundleModel.findByIdAndDelete(id).exec();
-    if (!result) {
-      throw new NotFoundException("Preset bundle not found");
-    }
+  async findAllPresetBundles(): Promise<Bundle[]> {
+    return this.bundleModel.find({ isPreset: true }).exec();
   }
 }

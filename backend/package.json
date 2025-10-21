@@ -29,6 +29,7 @@
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.3",
     "ethers": "^6.15.0",
+    "express": "^5.1.0",
     "mongoose": "^8.19.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

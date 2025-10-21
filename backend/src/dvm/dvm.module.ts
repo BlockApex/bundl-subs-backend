@@ -3,10 +3,6 @@ import { MongooseModule } from "@nestjs/mongoose";
 import { DvmController } from "./dvm.controller";
 import { DvmService } from "./dvm.service";
 import { Bundle, BundleSchema } from "./schemas/bundle.schema";
-import {
-  PresetBundle,
-  PresetBundleSchema,
-} from "./schemas/preset-bundle.schema";
 import { Service, ServiceSchema } from "./schemas/service.schema";
 
 @Module({
@@ -14,7 +10,6 @@ import { Service, ServiceSchema } from "./schemas/service.schema";
     MongooseModule.forFeature([
       { name: Service.name, schema: ServiceSchema },
       { name: Bundle.name, schema: BundleSchema },
-      { name: PresetBundle.name, schema: PresetBundleSchema },
     ]),
   ],
   providers: [DvmService],

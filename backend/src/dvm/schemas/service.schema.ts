@@ -1,8 +1,10 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Document } from "mongoose";
+import { HydratedDocument, Types } from "mongoose";
 import { Package, PackageSchema } from "./package.schema";
 
-export type ServiceDocument = Service & Document;
+export type ServiceDocument = HydratedDocument<
+  Service & ServiceDocumentOverride
+>;
 
 @Schema({ timestamps: true })
 export class Service {
@@ -32,3 +34,7 @@ export class Service {
 }
 
 export const ServiceSchema = SchemaFactory.createForClass(Service);
+
+export type ServiceDocumentOverride = {
+  packages: Types.DocumentArray<Package>;
+};
