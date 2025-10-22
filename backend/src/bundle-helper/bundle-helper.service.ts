@@ -219,7 +219,7 @@ export class BundleHelperService {
           offer,
           percentageValid: Math.min(
             100,
-            Math.floor((periodDays / (intervalDays + frequencyDays)) * 100),
+            Math.floor(((periodDays - intervalDays) / frequencyDays) * 100),
           ),
         });
       }
