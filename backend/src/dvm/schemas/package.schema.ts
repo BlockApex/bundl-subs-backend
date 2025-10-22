@@ -14,6 +14,9 @@ export class Package {
   name: string;
 
   @Prop({ required: true })
+  description: string;
+
+  @Prop({ required: true })
   amount: number;
 
   @Prop({ required: true })

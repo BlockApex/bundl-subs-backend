@@ -14,6 +14,9 @@ export class Service {
   @Prop({ required: true })
   logo: string;
 
+  @Prop({ required: true, lowercase: true })
+  category: string;
+
   @Prop({ required: true })
   description: string;
 

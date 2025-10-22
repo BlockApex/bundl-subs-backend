@@ -12,6 +12,9 @@ export class Bundle {
   @Prop({ required: false })
   description?: string;
 
+  @Prop({ required: true })
+  color: string;
+
   @Prop({ default: false, required: true })
   isPreset: boolean;
 

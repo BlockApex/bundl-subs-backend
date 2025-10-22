@@ -51,6 +51,9 @@ export class PackageDto {
   @IsString()
   name: string;
 
+  @IsString()
+  description: string;
+
   @IsNumber()
   amount: number;
 
@@ -80,6 +83,9 @@ export class CreateServiceDto {
 
   @IsString()
   logo: string;
+
+  @IsString()
+  category: string;
 
   @IsString()
   description: string;

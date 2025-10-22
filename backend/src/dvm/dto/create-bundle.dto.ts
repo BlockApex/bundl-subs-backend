@@ -2,6 +2,7 @@ import { Type } from "class-transformer";
 import {
   IsArray,
   IsBoolean,
+  IsHexColor,
   IsNumber,
   IsOptional,
   IsString,
@@ -17,6 +18,10 @@ export class CreateBundleDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsHexColor()
+  color?: string;
 
   @IsArray()
   @IsString({ each: true })
