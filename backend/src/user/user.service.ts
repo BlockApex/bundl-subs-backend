@@ -105,7 +105,7 @@ export class UserService {
     }
   }
 
-  async findByWalletAddress(walletAddress: string): Promise<User> {
+  async findByWalletAddress(walletAddress: string): Promise<UserDocument> {
     const user = await this.userModel.findOne({ walletAddress });
     if (!user) {
       throw new NotFoundException("User not found");

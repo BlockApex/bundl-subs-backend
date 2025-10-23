@@ -1,15 +1,14 @@
 import { Offer } from "src/dvm/schemas/offer.schema";
+import { PackageDocument } from "src/dvm/schemas/package.schema";
+import { ServiceDocument } from "src/dvm/schemas/service.schema";
 
 export class BundlePreviewResponseDto {
   name?: string;
   description?: string;
   packages: {
-    serviceId: string;
-    packageId: string;
-    serviceName: string;
-    packageName: string;
-    amount: number;
-    offers: Offer[];
+    service: ServiceDocument;
+    package: PackageDocument;
+    applicableOffers: Offer[];
   }[];
   frequency: string;
   totalFirstDiscountedPrice: number;

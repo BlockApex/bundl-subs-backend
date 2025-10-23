@@ -1,58 +1,77 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model, Types } from "mongoose";
+import { DvmService } from "src/dvm/dvm.service";
 import { PackageDocument } from "src/dvm/schemas/package.schema";
+import { UserDocument } from "src/user/schemas/user.schema";
 import { Offer } from "../dvm/schemas/offer.schema";
 import { ServiceDocument } from "../dvm/schemas/service.schema";
 import { BundlePreviewRequestDto } from "./dto/bundle-preview-request.dto";
 import { BundlePreviewResponseDto } from "./dto/bundle-preview-response.dto";
+import {
+  CreateBundleDto,
+  CreatePresetBundleDto,
+} from "./dto/create-bundle.dto";
+import { Bundle, BundleDocument } from "./schemas/bundle.schema";
 
 @Injectable()
-export class BundleHelperService {
+export class BundleService {
+  private readonly logger = new Logger(BundleService.name);
+
   constructor(
-    @InjectModel("Service") private serviceModel: Model<ServiceDocument>,
+    @InjectModel(Bundle.name) private bundleModel: Model<BundleDocument>,
+    @Inject() private dvmService: DvmService,
   ) {}
 
   async previewBundle(
     request: BundlePreviewRequestDto,
   ): Promise<BundlePreviewResponseDto> {
     // Get all services with their packages
-    const services = await this.serviceModel
-      .find({
-        _id: {
-          $in: request.selectedPackages.map(
-            (p) => new Types.ObjectId(p.serviceId),
-          ),
-        },
-      })
-      .exec();
+    const serviceIds = request.selectedPackages.map((p) => p.service);
+    const services: ServiceDocument[] = (
+      await this.dvmService.findActiveServices()
+    ).filter((service) => serviceIds.includes(service.id as string));
+
+    // does not contain subdocuments
+    const serviceRootDocuments: ServiceDocument[] =
+      await this.dvmService.findServiceRootDocumentsByIds(serviceIds);
 
     // Create a map of serviceId to service for quick lookup
     const serviceMap = new Map<string, ServiceDocument>();
     services.forEach((service) => {
       serviceMap.set(service.id as string, service);
     });
+    const serviceRootDocumentMap = new Map<string, ServiceDocument>();
+    serviceRootDocuments.forEach((service) => {
+      serviceRootDocumentMap.set(service.id as string, service);
+    });
 
     // Create a map of serviceId to package for quick lookup
     const packageMap = new Map<string, PackageDocument>();
     request.selectedPackages.forEach((selectedPackage) => {
       const packageData: PackageDocument = serviceMap
-        .get(selectedPackage.serviceId)!
+        .get(selectedPackage.service)!
         .packages.find(
-          (pkg: PackageDocument) => pkg.id === selectedPackage.packageId,
+          (pkg: PackageDocument) => pkg.id === selectedPackage.package,
         ) as PackageDocument;
       if (packageData) {
-        packageMap.set(selectedPackage.packageId, packageData);
+        packageMap.set(selectedPackage.package, packageData);
       } else {
         throw new BadRequestException(
-          `Package not found with id: ${selectedPackage.packageId} in service with id: ${selectedPackage.serviceId}`,
+          `Package not found with id: ${selectedPackage.package} in service with id: ${selectedPackage.service}`,
         );
       }
     });
 
     // verify all packages have same frequency
     const firstFrequency = packageMap.get(
-      request.selectedPackages[0].packageId,
+      request.selectedPackages[0].package,
     )?.frequency;
     for (const pkg of packageMap.values()) {
       if (pkg.frequency !== firstFrequency) {
@@ -64,29 +83,23 @@ export class BundleHelperService {
 
     // Build package details and collect all offers
     const packageDetails: {
-      serviceId: string;
-      packageId: string;
-      serviceName: string;
-      packageName: string;
-      amount: number;
-      offers: Offer[];
+      service: ServiceDocument;
+      package: PackageDocument;
+      applicableOffers: Offer[];
     }[] = [];
     let totalOriginalPrice = 0;
 
     for (const selectedPackage of request.selectedPackages) {
-      const service = serviceMap.get(selectedPackage.serviceId)!;
-      const packageData = packageMap.get(selectedPackage.packageId)!;
-
+      const packageData: PackageDocument = packageMap.get(
+        selectedPackage.package,
+      )!;
       // Add package details
       packageDetails.push({
-        serviceId: selectedPackage.serviceId,
-        packageId: selectedPackage.packageId,
-        serviceName: service.name,
-        packageName: packageData.name,
-        amount: packageData.amount,
-        offers: this.filterApplicableBundleOffers(
+        service: serviceRootDocumentMap.get(selectedPackage.service)!,
+        package: packageData,
+        applicableOffers: this.filterApplicableBundleOffers(
           packageData.offers,
-          request.selectedPackages.map((p) => p.serviceId),
+          request.selectedPackages.map((p) => p.service),
           request.selectedPackages.length,
         ),
       });
@@ -99,8 +112,8 @@ export class BundleHelperService {
     const totalFirstDiscountedPrice = packageDetails.reduce(
       (sum, packageDetail) => {
         const discountedPrice = this.calculateDiscountedPrice(
-          packageDetail,
-          packageDetail.offers,
+          packageDetail.package.amount,
+          packageDetail.applicableOffers,
           0,
           firstFrequency!,
         );
@@ -149,11 +162,7 @@ export class BundleHelperService {
   }
 
   private calculateDiscountedPrice(
-    packageDetail: {
-      serviceId: string;
-      packageId: string;
-      amount: number;
-    },
+    packageAmount: number,
     offers: Offer[],
     interval: number,
     frequency: string,
@@ -179,8 +188,7 @@ export class BundleHelperService {
         );
       } else if (filteredOffer.offer.type === "fixed discount") {
         // Handle fixed discount
-        const discount =
-          (filteredOffer.offer.amount / packageDetail.amount) * 100;
+        const discount = (filteredOffer.offer.amount / packageAmount) * 100;
         maxDiscount = Math.max(
           maxDiscount,
           (discount * filteredOffer.percentageValid) / 100,
@@ -188,7 +196,7 @@ export class BundleHelperService {
       }
     }
 
-    return Math.round(packageDetail.amount * (100 - maxDiscount)) / 100; // Round to 2 decimal places
+    return Math.round(packageAmount * (100 - maxDiscount)) / 100; // Round to 2 decimal places
   }
 
   private filterOffersForInterval(
@@ -265,12 +273,8 @@ export class BundleHelperService {
 
   private calculatePriceEveryInterval(
     packages: {
-      serviceId: string;
-      packageId: string;
-      serviceName: string;
-      packageName: string;
-      amount: number;
-      offers: Offer[];
+      package: PackageDocument;
+      applicableOffers: Offer[];
     }[],
     frequency: string,
   ): number[] {
@@ -288,8 +292,8 @@ export class BundleHelperService {
       const totalFirstDiscountedPrice = packages.reduce(
         (sum, packageDetail) => {
           const discountedPrice = this.calculateDiscountedPrice(
-            packageDetail,
-            packageDetail.offers,
+            packageDetail.package.amount,
+            packageDetail.applicableOffers,
             i,
             frequency,
           );
@@ -300,5 +304,157 @@ export class BundleHelperService {
       prices.push(totalFirstDiscountedPrice);
     }
     return prices;
+  }
+
+  // Bundle CRUD operations
+  async createBundle(
+    createBundleDto: CreateBundleDto,
+    user: UserDocument,
+  ): Promise<Bundle> {
+    try {
+      const previewBundle = await this.previewBundle({
+        selectedPackages: createBundleDto.selectedPackages,
+      });
+      const bundle = new this.bundleModel({
+        ...createBundleDto,
+        selectedPackages: previewBundle.packages.map((pkg) => ({
+          service: pkg.service,
+          package: pkg.package,
+          applicableOffers: pkg.applicableOffers,
+        })),
+        frequency: previewBundle.frequency,
+        totalFirstDiscountedPrice: previewBundle.totalFirstDiscountedPrice,
+        totalOriginalPrice: previewBundle.totalOriginalPrice,
+        priceEveryInterval: previewBundle.priceEveryInterval,
+        createdBy: user,
+      });
+      return await (
+        await bundle.save()
+      ).populate(
+        "selectedPackages.service",
+        "name logo category description allowedCustomerTypes isActive",
+      );
+    } catch (error) {
+      this.logger.error("Error creating bundle:", error);
+      throw new BadRequestException("Failed to create bundle");
+    }
+  }
+
+  async findAllBundles(user: UserDocument): Promise<Bundle[]> {
+    return this.bundleModel
+      .find({
+        createdBy: Types.ObjectId.createFromHexString(user.id as string),
+        isActive: true,
+      })
+      .populate(
+        "selectedPackages.service",
+        "name logo category description allowedCustomerTypes isActive",
+      )
+      .exec();
+  }
+
+  async findActiveBundleById(id: string): Promise<Bundle> {
+    const bundle = await this.bundleModel
+      .findOne({ _id: Types.ObjectId.createFromHexString(id), isActive: true })
+      .populate("createdBy", "walletAddress")
+      .populate(
+        "selectedPackages.service",
+        "name logo category description allowedCustomerTypes isActive",
+      )
+      .exec();
+    if (!bundle) {
+      throw new NotFoundException("Bundle not found");
+    }
+    return bundle;
+  }
+
+  async findBundleById(id: string): Promise<Bundle> {
+    const bundle = await this.bundleModel
+      .findById(id)
+      .populate("createdBy", "walletAddress")
+      .exec();
+    if (!bundle) {
+      throw new NotFoundException("Bundle not found");
+    }
+    return bundle;
+  }
+
+  async updateBundle(
+    id: string,
+    updateData: Partial<CreateBundleDto>,
+  ): Promise<Bundle> {
+    const computedUpdateData: Partial<CreateBundleDto> &
+      Partial<{
+        totalFirstDiscountedPrice: number;
+        totalOriginalPrice: number;
+        priceEveryInterval: number[];
+      }> = {
+      ...updateData,
+    };
+    if (updateData.selectedPackages) {
+      const previewBundle = await this.previewBundle({
+        selectedPackages: updateData.selectedPackages,
+      });
+      computedUpdateData.totalFirstDiscountedPrice =
+        previewBundle.totalFirstDiscountedPrice;
+      computedUpdateData.totalOriginalPrice = previewBundle.totalOriginalPrice;
+      computedUpdateData.priceEveryInterval = previewBundle.priceEveryInterval;
+    }
+    const bundle = await this.bundleModel
+      .findByIdAndUpdate(id, computedUpdateData, { new: true })
+      .exec();
+    if (!bundle) {
+      throw new NotFoundException("Bundle not found");
+    }
+    return bundle;
+  }
+
+  // Preset Bundle CRUD operations
+  async createPresetBundle(
+    createPresetBundleDto: CreatePresetBundleDto,
+    user: UserDocument,
+  ): Promise<Bundle> {
+    return this.createBundle(createPresetBundleDto, user);
+  }
+
+  async findAllPresetBundles(): Promise<Bundle[]> {
+    return this.bundleModel
+      .find({ isPreset: true })
+      .populate(
+        "selectedPackages.service",
+        "name logo category description allowedCustomerTypes isActive",
+      )
+      .exec();
+  }
+
+  // Bundle deactivation methods
+  async deactivateBundle(id: string): Promise<Bundle> {
+    const bundle = await this.bundleModel
+      .findByIdAndUpdate(id, { isActive: false }, { new: true })
+      .populate(
+        "selectedPackages.service",
+        "name logo category description allowedCustomerTypes isActive",
+      )
+      .exec();
+
+    if (!bundle) {
+      throw new NotFoundException("Bundle not found");
+    }
+    return bundle;
+  }
+
+  async reactivateBundle(id: string): Promise<Bundle> {
+    const bundle = await this.bundleModel
+      .findByIdAndUpdate(id, { isActive: true }, { new: true })
+      .populate(
+        "selectedPackages.service",
+        "name logo category description allowedCustomerTypes isActive",
+      )
+      .exec();
+
+    if (!bundle) {
+      throw new NotFoundException("Bundle not found");
+    }
+    return bundle;
   }
 }

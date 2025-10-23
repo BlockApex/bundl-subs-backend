@@ -3,12 +3,11 @@ import {
   IsArray,
   IsBoolean,
   IsHexColor,
-  IsNumber,
   IsOptional,
   IsString,
   ValidateNested,
 } from "class-validator";
-import { OfferDto } from "./create-service.dto";
+import { SelectedPackageDto } from "./selected-package.dto";
 
 export class CreateBundleDto {
   @IsOptional()
@@ -24,35 +23,12 @@ export class CreateBundleDto {
   color?: string;
 
   @IsArray()
-  @IsString({ each: true })
-  packages: string[];
-
-  @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => PackageActiveOffers)
-  offers: PackageActiveOffers[];
-
-  @IsString()
-  frequency: string;
-
-  @IsNumber()
-  totalDiscountedPrice: number;
-
-  @IsNumber()
-  totalOriginalPrice: number;
+  @Type(() => SelectedPackageDto)
+  selectedPackages: SelectedPackageDto[];
 }
 
 export class CreatePresetBundleDto extends CreateBundleDto {
   @IsBoolean()
   isPreset: boolean;
-}
-
-export class PackageActiveOffers {
-  @IsString()
-  package: string;
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => OfferDto)
-  offers: OfferDto[];
 }

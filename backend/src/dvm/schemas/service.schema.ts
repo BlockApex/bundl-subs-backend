@@ -29,10 +29,10 @@ export class Service {
   @Prop({ type: [PackageSchema], default: [] })
   packages: Package[];
 
-  @Prop({ default: Date.now })
+  @Prop({ default: Date.now, select: false })
   createdAt: Date;
 
-  @Prop({ default: Date.now })
+  @Prop({ default: Date.now, select: false })
   updatedAt: Date;
 }
 

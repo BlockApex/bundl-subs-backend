@@ -13,11 +13,6 @@ import { ShutdownObserver } from "./shutdown-observer";
 config();
 
 async function bootstrap() {
-  const httpsOptions = {
-    key: readFileSync("./secrets/private-key.pem"),
-    cert: readFileSync("./secrets/public-certificate.pem"),
-  };
-
   const server = express();
   const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
     logger: ["error", "warn", "log"],
@@ -53,6 +48,10 @@ async function bootstrap() {
 
   // use https server if not production
   if (configService.get<string>("NODE_ENV") !== "production") {
+    const httpsOptions = {
+      key: readFileSync("./secrets/private-key.pem"),
+      cert: readFileSync("./secrets/public-certificate.pem"),
+    };
     const httpsServer = https.createServer(httpsOptions, server).listen(443);
     shutdownObserver.addHttpServer(httpsServer);
   }

@@ -4,7 +4,7 @@ import { MongooseModule } from "@nestjs/mongoose";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 import { AuthModule } from "./auth/auth.module";
-import { BundleHelperModule } from "./bundle-helper/bundle-helper.module";
+import { BundleModule } from "./bundle/bundle.module";
 import { DvmModule } from "./dvm/dvm.module";
 import { ShutdownObserver } from "./shutdown-observer";
 import { UserModule } from "./user/user.module";
@@ -24,7 +24,7 @@ import { UserModule } from "./user/user.module";
     UserModule,
     AuthModule,
     DvmModule,
-    BundleHelperModule,
+    BundleModule,
   ],
   controllers: [AppController],
   providers: [AppService, ShutdownObserver],
