@@ -95,8 +95,16 @@ export class CreateServiceDto {
   allowedCustomerTypes: string[];
 
   @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
+  @IsString()
+  webhookUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  emailAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  walletAddress?: string;
 
   @IsOptional()
   @IsArray()

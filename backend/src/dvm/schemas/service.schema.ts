@@ -29,6 +29,15 @@ export class Service {
   @Prop({ type: [PackageSchema], default: [] })
   packages: Package[];
 
+  @Prop({ required: false, select: false })
+  walletAddress: string;
+
+  @Prop({ required: false, select: false })
+  emailAddress: string;
+
+  @Prop({ required: false, select: false })
+  webhookUrl: string;
+
   @Prop({ default: Date.now, select: false })
   createdAt: Date;
 

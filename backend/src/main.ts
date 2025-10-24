@@ -17,7 +17,12 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
     logger: ["error", "warn", "log"],
     cors: {
-      origin: "*", ///orbitearn\.com$/,
+      origin: [
+        /blockapex\.io$/,
+        /vercel\.app$/,
+        /localhost$/,
+        /bundlsub\.com$/,
+      ],
       optionsSuccessStatus: 200,
       credentials: true,
     },
