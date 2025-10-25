@@ -14,6 +14,10 @@ export class RequiredFormFieldDto {
 
   @IsString()
   fieldType: string;
+
+  @IsBoolean()
+  @IsOptional()
+  optional?: boolean;
 }
 
 export class BundlRestrictionsDto {

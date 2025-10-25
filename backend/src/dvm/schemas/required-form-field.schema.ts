@@ -10,6 +10,9 @@ export class RequiredFormField {
 
   @Prop({ required: true })
   fieldType: string;
+
+  @Prop({ required: true, default: false })
+  optional: boolean;
 }
 
 export const RequiredFormFieldSchema =
