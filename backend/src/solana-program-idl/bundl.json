@@ -62,9 +62,8 @@
           "pda": {
             "seeds": [
               {
-                "kind": "account",
-                "path": "controller.bundle_counter",
-                "account": "UserBundlSubscriptionController"
+                "kind": "arg",
+                "path": "_bundle_id"
               },
               {
                 "kind": "account",
@@ -109,6 +108,10 @@
         {
           "name": "num_recipients",
           "type": "u8"
+        },
+        {
+          "name": "_bundle_id",
+          "type": "u64"
         }
       ]
     },
@@ -578,10 +581,6 @@
           {
             "name": "user",
             "type": "pubkey"
-          },
-          {
-            "name": "bundle_counter",
-            "type": "u64"
           },
           {
             "name": "user_token_account",

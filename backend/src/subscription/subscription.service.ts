@@ -6,42 +6,57 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectModel } from "@nestjs/mongoose";
-import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import {
+  createApproveInstruction,
+  getAssociatedTokenAddress,
+  TOKEN_PROGRAM_ID,
+} from "@solana/spl-token";
 import {
   clusterApiUrl,
   Connection,
+  Keypair,
   PublicKey,
   SystemProgram,
+  Transaction,
   TransactionInstruction,
 } from "@solana/web3.js";
 import { createHash } from "crypto";
 import { Model, Types } from "mongoose";
 import { BundleService } from "src/bundle/bundle.service";
-import type { Bundle } from "src/bundle/schemas/bundle.schema";
+import type { BundleDocument } from "src/bundle/schemas/bundle.schema";
 import {
   UserSubscription,
   UserSubscriptionDocument,
 } from "src/subscription/schemas/user-subscription.schema";
 import type { UserDocument } from "src/user/schemas/user.schema";
+import { CreateSubscriptionDto } from "./dto/create-subscription.dto";
 
 @Injectable()
 export class SubscriptionService {
   private readonly logger = new Logger(SubscriptionService.name);
   private readonly PROGRAM_ID: string;
   private readonly MODE: string;
+  private readonly USDC_MINT_ADDRESS =
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+  private readonly SECONDS_PER_DAY = 86400;
+
   constructor(
     @InjectModel(UserSubscription.name)
     private readonly userSubscriptionModel: Model<UserSubscriptionDocument>,
     private readonly bundleService: BundleService,
-    configService: ConfigService,
+    private readonly configService: ConfigService,
   ) {
     this.PROGRAM_ID = configService.get<string>("PROGRAM_ID")!;
     this.MODE = configService.get<string>("MODE")!;
   }
 
-  async initiateSubscription(bundleId: string, user: UserDocument) {
-    const bundle: Bundle =
-      await this.bundleService.findActiveBundleById(bundleId);
+  async initiateSubscription(
+    bundleId: string,
+    user: UserDocument,
+    body: CreateSubscriptionDto,
+  ) {
+    const bundle: BundleDocument =
+      await this.bundleService.findActiveBundleByIdWithServiceDetails(bundleId);
     if (!bundle) throw new NotFoundException("Bundle not found");
 
     const filter = {
@@ -88,15 +103,174 @@ export class SubscriptionService {
       );
       transactions.push({
         type: "initializeController",
-        data: { transaction: initializeTxIx },
+        data: { instruction: initializeTxIx },
       });
     }
+
+    // Step 3: add approval transaction
+    const approvalTxIx = await this.getApprovalInstruction(
+      controllerAddress,
+      user.walletAddress,
+      Math.ceil(
+        bundle.priceEveryInterval
+          .slice(0, body.numberOfIntervals)
+          .reduce((acc, curr) => acc + curr, 0) * 1e6,
+      ), // convert to micro USDC
+    );
+    transactions.push({
+      type: "approval",
+      data: { instruction: approvalTxIx },
+    });
+
+    // Step 4: add bundle transaction
+    const privateKey = Uint8Array.from(
+      JSON.parse(
+        this.configService.get<string>("PRIVATE_KEY")!,
+      ) as Iterable<number>,
+    );
+    const bundleTxIx = await this.getBundleInstruction(
+      bundle,
+      controllerAddress,
+      user.walletAddress,
+      privateKey,
+    );
+    const bundleTx = await this.getBundleTransaction(
+      bundleTxIx,
+      privateKey,
+      user.walletAddress,
+    );
+    transactions.push({
+      type: "bundle",
+      data: { transaction: bundleTx },
+    });
 
     return {
       // subscriptionId: sub.id as string,
       controllerAddress,
       transactions,
     };
+  }
+
+  private async getApprovalInstruction(
+    controllerAddress: string,
+    userWallet: string,
+    amount: number,
+  ): Promise<TransactionInstruction> {
+    const controllerPda = new PublicKey(controllerAddress);
+    const userPublicKey = new PublicKey(userWallet);
+    const tokenAccount = await this.getTokenAccountAddress(
+      userWallet,
+      this.USDC_MINT_ADDRESS,
+    );
+
+    return createApproveInstruction(
+      tokenAccount,
+      controllerPda,
+      userPublicKey,
+      amount,
+      [],
+      TOKEN_PROGRAM_ID,
+    );
+  }
+
+  private async getBundleInstruction(
+    bundle: BundleDocument,
+    controllerAddress: string,
+    userWalletAddress: string,
+    privateKey: Uint8Array,
+  ): Promise<TransactionInstruction> {
+    const programId = new PublicKey(this.PROGRAM_ID);
+    const controllerPda = new PublicKey(controllerAddress);
+    const walletKeyPair = Keypair.fromSecretKey(privateKey);
+    const userWalletAddressPublicKey = new PublicKey(userWalletAddress);
+
+    const maxPricePerInterval =
+      bundle.priceEveryInterval[bundle.priceEveryInterval.length - 1];
+    const interval =
+      this.frequenceToDays(bundle.frequency) * this.SECONDS_PER_DAY;
+    console.log(bundle);
+    const recepients = await Promise.all(
+      bundle.selectedPackages.map((selectedPackage) => {
+        console.log(selectedPackage.service);
+        return this.getTokenAccountAddress(
+          selectedPackage.service.walletAddress,
+          this.USDC_MINT_ADDRESS,
+        );
+      }),
+    );
+    const numRecipients = bundle.selectedPackages.length;
+
+    // Convert arguments to Buffers
+    const amountBuf = Buffer.from(
+      new BigUint64Array([BigInt(Math.ceil(maxPricePerInterval * 1e6))]).buffer, // convert to micro USDC
+    );
+    const intervalBuf = Buffer.from(
+      new BigUint64Array([BigInt(interval)]).buffer,
+    );
+    const atasBuf = Buffer.concat(
+      Array.from({ length: 5 }, (_, i) =>
+        (recepients[i] || PublicKey.default).toBuffer(),
+      ),
+    );
+    const numRecipientsBuf = Buffer.from([numRecipients]);
+    const bundleIdBuf = Buffer.from(
+      new BigUint64Array([BigInt("0x" + bundle.id)]).buffer,
+    );
+
+    // Anchor discriminator: sha256("global:initialize_controller").slice(0, 8)
+    const discriminator = createHash("sha256")
+      .update("global:add_bundle")
+      .digest()
+      .subarray(0, 8);
+
+    // No args for initializeController in this context
+    const data = Buffer.concat([
+      discriminator,
+      amountBuf,
+      intervalBuf,
+      atasBuf,
+      numRecipientsBuf,
+      bundleIdBuf,
+    ]);
+
+    const bundlePda = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from(
+          new Uint8Array(new BigUint64Array([BigInt("0x" + bundle.id)]).buffer),
+        ),
+        controllerPda.toBuffer(),
+      ],
+      new PublicKey(this.PROGRAM_ID),
+    )[0];
+
+    const keys = [
+      { pubkey: controllerPda, isSigner: false, isWritable: true },
+      { pubkey: bundlePda, isSigner: false, isWritable: true },
+      { pubkey: walletKeyPair.publicKey, isSigner: true, isWritable: true }, // authority (same user)
+      { pubkey: userWalletAddressPublicKey, isSigner: true, isWritable: true }, // user
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ];
+
+    return new TransactionInstruction({ keys, programId, data });
+  }
+
+  private async getBundleTransaction(
+    instruction: TransactionInstruction,
+    privateKey: Uint8Array,
+    userWalletAddress: string,
+  ): Promise<Transaction> {
+    const userWalletAddressPublicKey = new PublicKey(userWalletAddress);
+    const walletKeyPair = Keypair.fromSecretKey(privateKey);
+    const transaction = new Transaction({
+      blockhash: (await this.getSolanaConnection().getLatestBlockhash())
+        .blockhash,
+      lastValidBlockHeight: (
+        await this.getSolanaConnection().getLatestBlockhash()
+      ).lastValidBlockHeight,
+    }).add(instruction);
+    transaction.feePayer = userWalletAddressPublicKey;
+    transaction.partialSign(walletKeyPair);
+    return transaction;
   }
 
   private getSubscriptionControllerAddress(userWallet: string): string {
@@ -136,8 +310,11 @@ export class SubscriptionService {
     mintAccount: string,
   ): Promise<PublicKey> {
     const programId = TOKEN_PROGRAM_ID;
+    console.log(userWallet);
     const userPublicKey = new PublicKey(userWallet);
+    console.log(userPublicKey);
     const mintAccountPublicKey = new PublicKey(mintAccount);
+    console.log(mintAccountPublicKey);
     const tokenAccount = await getAssociatedTokenAddress(
       mintAccountPublicKey,
       userPublicKey,
@@ -164,12 +341,10 @@ export class SubscriptionService {
 
     const controllerPda = new PublicKey(controllerAddress);
     const authorityPk = new PublicKey(authority);
-    const usdcDevnetMint = new PublicKey(
-      "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-    );
+    const usdcDevnetMint = new PublicKey(this.USDC_MINT_ADDRESS);
     const tokenAccount = await this.getTokenAccountAddress(
       authority,
-      usdcDevnetMint.toBase58(),
+      this.USDC_MINT_ADDRESS,
     );
 
     const keys = [
@@ -197,5 +372,20 @@ export class SubscriptionService {
       { type: "subscription", data: { raw: "0xsub-tx" } },
       { type: "approval", data: { raw: "0xapprove-tx" } },
     ];
+  }
+
+  private frequenceToDays(frequency: string): number {
+    switch (frequency) {
+      case "annually":
+        return 365;
+      case "monthly":
+        return 30;
+      case "weekly":
+        return 7;
+      case "daily":
+        return 1;
+      default:
+        return 0;
+    }
   }
 }

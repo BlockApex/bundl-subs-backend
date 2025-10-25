@@ -353,13 +353,30 @@ export class BundleService {
       .exec();
   }
 
-  async findActiveBundleById(id: string): Promise<Bundle> {
+  async findActiveBundleById(id: string): Promise<BundleDocument> {
     const bundle = await this.bundleModel
       .findOne({ _id: Types.ObjectId.createFromHexString(id), isActive: true })
       .populate("createdBy", "walletAddress")
       .populate(
         "selectedPackages.service",
         "name logo category description allowedCustomerTypes isActive",
+      )
+      .exec();
+    if (!bundle) {
+      throw new NotFoundException("Bundle not found");
+    }
+    return bundle;
+  }
+
+  async findActiveBundleByIdWithServiceDetails(
+    id: string,
+  ): Promise<BundleDocument> {
+    const bundle = await this.bundleModel
+      .findOne({ _id: Types.ObjectId.createFromHexString(id), isActive: true })
+      .populate("createdBy", "walletAddress")
+      .populate(
+        "selectedPackages.service",
+        "name logo category description allowedCustomerTypes isActive walletAddress emailAddress webhookUrl",
       )
       .exec();
     if (!bundle) {
