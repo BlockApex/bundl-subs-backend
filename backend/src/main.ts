@@ -21,7 +21,7 @@ async function bootstrap() {
         /blockapex\.io$/,
         /vercel\.app$/,
         /localhost$/,
-        /bundlsub\.com$/,
+        /bundlsubs\.com$/,
       ],
       optionsSuccessStatus: 200,
       credentials: true,
