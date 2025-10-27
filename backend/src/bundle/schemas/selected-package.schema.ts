@@ -11,8 +11,8 @@ export class SelectedPackage {
   @Prop({ type: Types.ObjectId, ref: "Service", required: true })
   service: ServiceDocument;
 
-  @Prop({ type: [PackageSchema], required: true })
-  package: Package[];
+  @Prop({ type: PackageSchema, required: true })
+  package: Package;
 
   @Prop({ type: [OfferSchema], required: true })
   applicableOffers: Offer[];

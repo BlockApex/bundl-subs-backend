@@ -9,19 +9,22 @@ import { readFileSync } from "fs";
 import http from "http";
 import https from "https";
 import { AppModule } from "./app.module";
-import { ShutdownObserver } from "./shutdown-observer";
+import "./extras/bigint-toJSON";
+import { ShutdownObserver } from "./extras/shutdown-observer";
+
 config();
 
 async function bootstrap() {
   const server = express();
   const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
-    logger: ["error", "warn", "log"],
+    logger: ["error", "warn", "log", "debug", "verbose"],
     cors: {
       origin: [
         /blockapex\.io$/,
         /vercel\.app$/,
         /localhost$/,
         /bundlsubs\.com$/,
+        /172.18.0.20/,
       ],
       optionsSuccessStatus: 200,
       credentials: true,

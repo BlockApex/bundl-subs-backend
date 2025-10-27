@@ -161,7 +161,7 @@ export class BundleService {
     });
   }
 
-  private calculateDiscountedPrice(
+  public calculateDiscountedPrice(
     packageAmount: number,
     offers: Offer[],
     interval: number,

@@ -55,9 +55,13 @@ export class SubscriptionService {
     user: UserDocument,
     body: CreateSubscriptionDto,
   ) {
+    this.logger.log(
+      `Entering initiateSubscription with bundleId: ${bundleId}, user: ${user.walletAddress}, body: ${body.numberOfIntervals}`,
+    );
     const bundle: BundleDocument =
       await this.bundleService.findActiveBundleByIdWithServiceDetails(bundleId);
     if (!bundle) throw new NotFoundException("Bundle not found");
+    this.logger.debug(`bundle found`);
 
     const filter = {
       user: Types.ObjectId.createFromHexString(user.id as string),
@@ -73,6 +77,7 @@ export class SubscriptionService {
     ) {
       throw new BadRequestException("Subscription already exists");
     }
+    this.logger.debug(`subscription not found`);
 
     // // Step 1: Create or re-activate as intended if previously cancelled/suspended
     // const sub = await this.userSubscriptionModel.findOneAndUpdate(
@@ -92,9 +97,11 @@ export class SubscriptionService {
     const controllerAddress = this.getSubscriptionControllerAddress(
       user.walletAddress,
     );
+    this.logger.debug(`controller address: ${controllerAddress}`);
 
     // If the controller PDA does not exist, build tx for FE to sign and send
     const controllerExists = await this.controllerPdaExists(controllerAddress);
+    this.logger.debug(`controller exists: ${controllerExists}`);
     const transactions: { type: string; data: unknown }[] = [];
     if (!controllerExists) {
       const initializeTxIx = await this.getInitializeControllerInstruction(
@@ -117,6 +124,9 @@ export class SubscriptionService {
           .reduce((acc, curr) => acc + curr, 0) * 1e6,
       ), // convert to micro USDC
     );
+    this.logger.verbose(
+      `approval transaction instruction: ${JSON.stringify(approvalTxIx)}`,
+    );
     transactions.push({
       type: "approval",
       data: { instruction: approvalTxIx },
@@ -134,6 +144,9 @@ export class SubscriptionService {
       user.walletAddress,
       privateKey,
     );
+    this.logger.verbose(
+      `bundle transaction instruction: ${JSON.stringify(bundleTxIx)}`,
+    );
     const bundleTx = await this.getBundleTransaction(
       bundleTxIx,
       privateKey,
@@ -141,7 +154,14 @@ export class SubscriptionService {
     );
     transactions.push({
       type: "bundle",
-      data: { transaction: bundleTx },
+      data: {
+        transaction: bundleTx
+          .serialize({
+            requireAllSignatures: false,
+            verifySignatures: false,
+          })
+          .toString("base64"),
+      },
     });
 
     return {
@@ -188,10 +208,8 @@ export class SubscriptionService {
       bundle.priceEveryInterval[bundle.priceEveryInterval.length - 1];
     const interval =
       this.frequenceToDays(bundle.frequency) * this.SECONDS_PER_DAY;
-    console.log(bundle);
     const recepients = await Promise.all(
       bundle.selectedPackages.map((selectedPackage) => {
-        console.log(selectedPackage.service);
         return this.getTokenAccountAddress(
           selectedPackage.service.walletAddress,
           this.USDC_MINT_ADDRESS,
@@ -213,9 +231,9 @@ export class SubscriptionService {
       ),
     );
     const numRecipientsBuf = Buffer.from([numRecipients]);
-    const bundleIdBuf = Buffer.from(
-      new BigUint64Array([BigInt("0x" + bundle.id)]).buffer,
-    );
+    const bundleIdBuf = createHash("md5")
+      .update(bundle.id as string)
+      .digest();
 
     // Anchor discriminator: sha256("global:initialize_controller").slice(0, 8)
     const discriminator = createHash("sha256")
@@ -226,20 +244,15 @@ export class SubscriptionService {
     // No args for initializeController in this context
     const data = Buffer.concat([
       discriminator,
+      bundleIdBuf,
       amountBuf,
       intervalBuf,
       atasBuf,
       numRecipientsBuf,
-      bundleIdBuf,
     ]);
 
     const bundlePda = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from(
-          new Uint8Array(new BigUint64Array([BigInt("0x" + bundle.id)]).buffer),
-        ),
-        controllerPda.toBuffer(),
-      ],
+      [bundleIdBuf, controllerPda.toBuffer()],
       new PublicKey(this.PROGRAM_ID),
     )[0];
 
@@ -274,13 +287,20 @@ export class SubscriptionService {
   }
 
   private getSubscriptionControllerAddress(userWallet: string): string {
+    this.logger.log(
+      `Entering getSubscriptionControllerAddress with userWallet: ${userWallet}`,
+    );
     const programId = new PublicKey(this.PROGRAM_ID);
     const userPublicKey = new PublicKey(userWallet);
     const [controllerPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("controller"), userPublicKey.toBuffer()],
       programId,
     );
-    return controllerPda.toBase58();
+    const controllerAddress = controllerPda.toBase58();
+    this.logger.debug(
+      `Exiting getSubscriptionControllerAddress with controller address: ${controllerAddress}`,
+    );
+    return controllerAddress;
   }
 
   private getSolanaConnection(): Connection {
@@ -310,11 +330,8 @@ export class SubscriptionService {
     mintAccount: string,
   ): Promise<PublicKey> {
     const programId = TOKEN_PROGRAM_ID;
-    console.log(userWallet);
     const userPublicKey = new PublicKey(userWallet);
-    console.log(userPublicKey);
     const mintAccountPublicKey = new PublicKey(mintAccount);
-    console.log(mintAccountPublicKey);
     const tokenAccount = await getAssociatedTokenAddress(
       mintAccountPublicKey,
       userPublicKey,
@@ -357,21 +374,6 @@ export class SubscriptionService {
     ];
 
     return new TransactionInstruction({ keys, programId, data });
-  }
-
-  private buildSubscriptionTransactionsStub(
-    _controllerAddress: string,
-    _bundleId: string,
-    _userWallet: string,
-  ): { type: string; data: unknown }[] {
-    // Placeholder: return mock tx payloads
-    void _controllerAddress;
-    void _bundleId;
-    void _userWallet;
-    return [
-      { type: "subscription", data: { raw: "0xsub-tx" } },
-      { type: "approval", data: { raw: "0xapprove-tx" } },
-    ];
   }
 
   private frequenceToDays(frequency: string): number {

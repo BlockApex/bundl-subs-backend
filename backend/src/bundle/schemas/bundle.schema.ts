@@ -53,5 +53,5 @@ export class Bundle {
 export const BundleSchema = SchemaFactory.createForClass(Bundle);
 
 export type BundleDocumentOverride = {
-  packages: Types.DocumentArray<SelectedPackage>;
+  selectedPackages: Types.DocumentArray<SelectedPackage>;
 };
