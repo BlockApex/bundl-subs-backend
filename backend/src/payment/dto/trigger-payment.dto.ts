@@ -1,6 +1,6 @@
 import { IsString } from "class-validator";
 
-export class CreateSubscriptionDto {
+export class TriggerPaymentDto {
   @IsString()
-  bundleId: string;
+  subscriptionId: string;
 }

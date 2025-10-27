@@ -5,7 +5,6 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { InjectModel } from "@nestjs/mongoose";
 import {
   getAccount,
   getAssociatedTokenAddress,
@@ -24,14 +23,12 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { createHash } from "crypto";
-import { Model } from "mongoose";
 import { BundleService } from "src/bundle/bundle.service";
 import type { BundleDocument } from "src/bundle/schemas/bundle.schema";
-import {
-  UserSubscription,
-  UserSubscriptionDocument,
-} from "src/subscription/schemas/user-subscription.schema";
+import { UserSubscriptionDocument } from "src/subscription/schemas/user-subscription.schema";
+import { SubscriptionService } from "src/subscription/subscription.service";
 import type { UserDocument } from "src/user/schemas/user.schema";
+import { TriggerPaymentDto } from "./dto/trigger-payment.dto";
 
 @Injectable()
 export class PaymentService {
@@ -44,9 +41,8 @@ export class PaymentService {
   private readonly connection: Connection;
 
   constructor(
-    @InjectModel(UserSubscription.name)
-    private readonly userSubscriptionModel: Model<UserSubscriptionDocument>,
     private readonly bundleService: BundleService,
+    private readonly subscriptionService: SubscriptionService,
     private readonly configService: ConfigService,
   ) {
     this.PROGRAM_ID = configService.get<string>("PROGRAM_ID")!;
@@ -54,36 +50,27 @@ export class PaymentService {
     this.connection = this.getSolanaConnection();
   }
 
-  async triggerBundlePayment(
-    bundleId: string,
+  async triggerSubscriptionFirstPayment(
     user: UserDocument,
-    _payload: Record<string, unknown>,
+    payload: TriggerPaymentDto,
   ) {
-    void _payload;
-    const bundle: BundleDocument =
-      await this.bundleService.findActiveBundleByIdWithServiceDetails(bundleId);
-    if (!bundle) throw new NotFoundException("Bundle not found");
+    const subscription =
+      await this.subscriptionService.findSubscriptionForFirstPayment(
+        payload.subscriptionId,
+      );
+    if (!subscription) throw new NotFoundException("Subscription not found");
+    if (subscription.status !== "intended") {
+      throw new BadRequestException(
+        "This subscription's first payment has already been made",
+      );
+    }
+
+    const bundle = subscription.bundle as BundleDocument;
 
     const userUSDCAccount = await this.getTokenAccountAddress(
       user.walletAddress,
       this.USDC_MINT_ADDRESS,
     );
-    const usdcBalance =
-      await this.connection.getTokenAccountBalance(userUSDCAccount);
-    if ((usdcBalance.value.uiAmount ?? 0) < bundle.totalFirstDiscountedPrice) {
-      throw new BadRequestException(
-        `Insufficient USDC balance, you have ${usdcBalance.value.uiAmount ?? 0} USDC but need ${bundle.totalFirstDiscountedPrice} USDC`,
-      );
-    }
-
-    // const subscription = await this.userSubscriptionModel.findOne({
-    //   user: Types.ObjectId.createFromHexString(user.id as string),
-    //   bundle: Types.ObjectId.createFromHexString(bundleId),
-    // });
-
-    // if (!subscription) {
-    //   throw new BadRequestException("Subscription not found");
-    // }
 
     // verify on-chain that sub is added and approval exists
     await this.ensurePDAsExistsAndHasApproval(
@@ -94,16 +81,15 @@ export class PaymentService {
     );
 
     // Create invoice for this payment attempt
-    // const invoice = {
-    //   date: new Date(),
-    //   status: "pending" as const,
-    //   amount:
-    //     bundle.priceEveryInterval?.[0] ?? bundle.totalFirstDiscountedPrice,
-    //   paymentHistory: [],
-    // };
+    const invoice = {
+      date: new Date(),
+      status: "pending" as const,
+      amount: bundle.totalFirstDiscountedPrice,
+      paymentHistory: [],
+    };
 
-    // subscription.invoices.push(invoice as any);
-    // await subscription.save();
+    subscription.invoices.push(invoice);
+    await subscription.save();
 
     // Stub: trigger pull payment
     const privateKey = Uint8Array.from(
@@ -134,6 +120,7 @@ export class PaymentService {
       this.logger.error(`Transaction failed: ${JSON.stringify(err)}`);
       const logs = await (err as SendTransactionError).getLogs(this.connection);
       this.logger.error(`Transaction logs: ${JSON.stringify(logs)}`);
+      await this.updatePaymentStatus(false, subscription, undefined);
       throw err;
     }
     this.logger.verbose(`Transaction signature fetched: ${signature}`);
@@ -150,22 +137,17 @@ export class PaymentService {
       this.logger.error(
         `Transaction not found or did not succeed: ${JSON.stringify(result)}`,
       );
+      await this.updatePaymentStatus(false, subscription, undefined);
       throw new Error("Transaction not found or did not succeed");
     }
     const txHash = signature;
 
     // Update invoice status
-    // const lastInvoice = subscription.invoices[subscription.invoices.length - 1];
-    // lastInvoice.status = "paid";
-    // lastInvoice.paymentHistory.push({
-    //   time: new Date(),
-    //   status: "success",
-    //   txHash,
-    // });
-    // subscription.status = "active";
-    // await subscription.save();
+    await this.updatePaymentStatus(true, subscription, txHash);
+    // Update next payment date
+    await this.updateNextPaymentDate(subscription);
 
-    return { success: true, txHash };
+    return { subscription, txHash };
   }
 
   private getSolanaConnection(): Connection {
@@ -218,6 +200,14 @@ export class PaymentService {
     this.logger.log(
       `Entering ensureControllerPDAExistsAndHasApproval with userWallet: ${userWallet}, userTokenAddress: ${userTokenAddress.toBase58()}, amount: ${amount}`,
     );
+    const usdcBalance =
+      await this.connection.getTokenAccountBalance(userTokenAddress);
+    if ((usdcBalance.value.uiAmount ?? 0) < amount) {
+      throw new BadRequestException(
+        `Insufficient USDC balance, you have ${usdcBalance.value.uiAmount ?? 0} USDC but need ${amount} USDC`,
+      );
+    }
+
     const controllerAddress = this.getSubscriptionControllerAddress(userWallet);
     const controllerPda = new PublicKey(controllerAddress);
     const info = await this.connection.getAccountInfo(controllerPda);
@@ -312,8 +302,9 @@ export class PaymentService {
     const amountsBuf = Buffer.concat(
       Array.from({ length: 5 }, (_, i) =>
         Buffer.from(
-          new BigUint64Array([BigInt(Math.ceil(splittedAmounts[i] ?? 0) * 1e6)])
-            .buffer,
+          new BigUint64Array([
+            BigInt(Math.ceil((splittedAmounts[i] ?? 0) * 1e6)),
+          ]).buffer,
         ),
       ),
     );
@@ -367,5 +358,45 @@ export class PaymentService {
     const versionedTransaction = new VersionedTransaction(message);
     versionedTransaction.sign([walletKeyPair]);
     return versionedTransaction;
+  }
+
+  private async updatePaymentStatus(
+    success: boolean,
+    subscription: UserSubscriptionDocument,
+    txHash?: string,
+  ) {
+    const lastInvoice = subscription.invoices[subscription.invoices.length - 1];
+    lastInvoice.status = success ? "paid" : "failed";
+    lastInvoice.paymentHistory.push({
+      time: new Date(),
+      status: success ? "success" : "failed",
+      txHash,
+    });
+    subscription.status = success ? "active" : "intended";
+    await subscription.save();
+  }
+
+  private async updateNextPaymentDate(subscription: UserSubscriptionDocument) {
+    const nextPaymentDate =
+      Date.now() +
+      this.frequenceToDays(subscription.bundle.frequency) *
+        this.SECONDS_PER_DAY;
+    subscription.nextPaymentDate = new Date(nextPaymentDate);
+    await subscription.save();
+  }
+
+  private frequenceToDays(frequency: string): number {
+    switch (frequency) {
+      case "annually":
+        return 365;
+      case "monthly":
+        return 30;
+      case "weekly":
+        return 7;
+      case "daily":
+        return 1;
+      default:
+        return 0;
+    }
   }
 }

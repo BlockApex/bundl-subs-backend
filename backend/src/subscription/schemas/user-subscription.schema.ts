@@ -88,6 +88,9 @@ export class UserSubscription {
   @Prop({ required: true, default: Date.now })
   subscribeDate: Date;
 
+  @Prop({ required: true, default: Date.now })
+  nextPaymentDate: Date;
+
   @Prop({ type: [InvoiceSchema], default: [] })
   invoices: Invoice[];
 

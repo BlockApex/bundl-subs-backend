@@ -30,6 +30,7 @@ import {
 } from "src/subscription/schemas/user-subscription.schema";
 import type { UserDocument } from "src/user/schemas/user.schema";
 import { CreateSubscriptionDto } from "./dto/create-subscription.dto";
+import { PrepareSubscriptionDto } from "./dto/prepare-subscription.dto";
 
 @Injectable()
 export class SubscriptionService {
@@ -50,22 +51,21 @@ export class SubscriptionService {
     this.MODE = configService.get<string>("MODE")!;
   }
 
-  async initiateSubscription(
-    bundleId: string,
-    user: UserDocument,
-    body: CreateSubscriptionDto,
-  ) {
+  async prepareSubscription(user: UserDocument, body: PrepareSubscriptionDto) {
     this.logger.log(
-      `Entering initiateSubscription with bundleId: ${bundleId}, user: ${user.walletAddress}, body: ${body.numberOfIntervals}`,
+      `Entering prepareSubscription with user: ${user.walletAddress}, body: ${JSON.stringify(body)}`,
     );
     const bundle: BundleDocument =
-      await this.bundleService.findActiveBundleByIdWithServiceDetails(bundleId);
+      await this.bundleService.findActiveBundleByIdWithServiceDetails(
+        body.bundleId,
+      );
+
     if (!bundle) throw new NotFoundException("Bundle not found");
     this.logger.debug(`bundle found`);
 
     const filter = {
       user: Types.ObjectId.createFromHexString(user.id as string),
-      bundle: Types.ObjectId.createFromHexString(bundleId),
+      bundle: Types.ObjectId.createFromHexString(body.bundleId),
     };
 
     // If subscription exists and is not cancelled or suspended, throw
@@ -79,20 +79,6 @@ export class SubscriptionService {
     }
     this.logger.debug(`subscription not found`);
 
-    // // Step 1: Create or re-activate as intended if previously cancelled/suspended
-    // const sub = await this.userSubscriptionModel.findOneAndUpdate(
-    //   filter,
-    //   {
-    //     $setOnInsert: {
-    //       subscribeDate: new Date(),
-    //     },
-    //     $set: {
-    //       status: "intended",
-    //     },
-    //   },
-    //   { upsert: true, new: true },
-    // );
-
     // Step 2: derive user subscription controller PDA
     const controllerAddress = this.getSubscriptionControllerAddress(
       user.walletAddress,
@@ -102,15 +88,20 @@ export class SubscriptionService {
     // If the controller PDA does not exist, build tx for FE to sign and send
     const controllerExists = await this.controllerPdaExists(controllerAddress);
     this.logger.debug(`controller exists: ${controllerExists}`);
-    const transactions: { type: string; data: unknown }[] = [];
+    const transactions: {
+      name: string;
+      desc: string;
+      instruction: TransactionInstruction;
+    }[] = [];
     if (!controllerExists) {
       const initializeTxIx = await this.getInitializeControllerInstruction(
         controllerAddress,
         user.walletAddress,
       );
       transactions.push({
-        type: "initializeController",
-        data: { instruction: initializeTxIx },
+        name: "Initialize Controller",
+        desc: "This is one time call to initialize your subscription controller. This controller will act as a gatekeeper to manage your subscriptions.",
+        instruction: initializeTxIx,
       });
     }
 
@@ -128,11 +119,65 @@ export class SubscriptionService {
       `approval transaction instruction: ${JSON.stringify(approvalTxIx)}`,
     );
     transactions.push({
-      type: "approval",
-      data: { instruction: approvalTxIx },
+      name: "Allow controller to spend your funds",
+      desc: "By approving this transaction, you allow the controller to spend your funds on your behalf every month. (It will only allow subscriptions that you have approved).",
+      instruction: approvalTxIx,
     });
 
-    // Step 4: add bundle transaction
+    return {
+      transactions,
+    };
+  }
+
+  async initiateSubscription(user: UserDocument, body: CreateSubscriptionDto) {
+    this.logger.log(
+      `Entering initiateSubscription with user: ${user.walletAddress}, body: ${JSON.stringify(body)}`,
+    );
+    const bundle: BundleDocument =
+      await this.bundleService.findActiveBundleByIdWithServiceDetails(
+        body.bundleId,
+      );
+    if (!bundle) throw new NotFoundException("Bundle not found");
+    this.logger.debug(`bundle found`);
+
+    const filter = {
+      user: Types.ObjectId.createFromHexString(user.id as string),
+      bundle: Types.ObjectId.createFromHexString(body.bundleId),
+    };
+
+    // If subscription exists and is not cancelled or suspended, throw
+    const existing = await this.userSubscriptionModel.findOne(filter).lean();
+    if (
+      existing &&
+      existing.status !== "cancelled" &&
+      existing.status !== "intended" &&
+      existing.status !== "suspended"
+    ) {
+      throw new BadRequestException("Subscription already exists");
+    }
+    this.logger.debug(`subscription not found`);
+
+    // // Step 1: Create or re-activate as intended if previously cancelled/suspended
+    const sub = await this.userSubscriptionModel.findOneAndUpdate(
+      filter,
+      {
+        $setOnInsert: {
+          subscribeDate: new Date(),
+        },
+        $set: {
+          status: "intended",
+        },
+      },
+      { upsert: true, new: true },
+    );
+
+    // Step 2: Create Add Bundle Transaction
+    const transactions: {
+      name: string;
+      desc: string;
+      transaction: string;
+    }[] = [];
+
     const privateKey = Uint8Array.from(
       JSON.parse(
         this.configService.get<string>("PRIVATE_KEY")!,
@@ -140,7 +185,7 @@ export class SubscriptionService {
     );
     const bundleTxIx = await this.getBundleInstruction(
       bundle,
-      controllerAddress,
+      this.getSubscriptionControllerAddress(user.walletAddress),
       user.walletAddress,
       privateKey,
     );
@@ -153,22 +198,52 @@ export class SubscriptionService {
       user.walletAddress,
     );
     transactions.push({
-      type: "bundle",
-      data: {
-        transaction: bundleTx
-          .serialize({
-            requireAllSignatures: false,
-            verifySignatures: false,
-          })
-          .toString("base64"),
-      },
+      name: "Add Bundle",
+      desc: "This transaction adds the bundle to your subscription controller. By approving this transaction, you allow the subscription controller to spend your funds for this bundle.",
+      transaction: bundleTx
+        .serialize({
+          requireAllSignatures: false,
+          verifySignatures: false,
+        })
+        .toString("base64"),
     });
 
     return {
-      // subscriptionId: sub.id as string,
-      controllerAddress,
+      subscription: sub,
       transactions,
     };
+  }
+
+  async findSubscriptionForFirstPayment(
+    subscriptionId: string,
+  ): Promise<UserSubscriptionDocument | null> {
+    return this.userSubscriptionModel.findById(subscriptionId).populate({
+      path: "bundle",
+      select:
+        "name description color isPreset selectedPackages frequency totalFirstDiscountedPrice totalOriginalPrice priceEveryInterval isActive createdBy",
+      populate: {
+        path: "selectedPackages.service",
+        select:
+          "name logo category description allowedCustomerTypes isActive walletAddress emailAddress webhookUrl",
+      },
+    });
+  }
+
+  async findUserSubscriptions(
+    userId: string,
+  ): Promise<UserSubscriptionDocument[]> {
+    return this.userSubscriptionModel
+      .find({ user: Types.ObjectId.createFromHexString(userId) })
+      .populate({
+        path: "bundle",
+        select:
+          "name description color isPreset selectedPackages frequency totalFirstDiscountedPrice totalOriginalPrice priceEveryInterval isActive createdBy",
+        populate: {
+          path: "selectedPackages.service",
+          select:
+            "name logo category description allowedCustomerTypes isActive",
+        },
+      });
   }
 
   private async getApprovalInstruction(
