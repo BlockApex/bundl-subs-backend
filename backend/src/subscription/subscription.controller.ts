@@ -59,8 +59,11 @@ export class SubscriptionController {
   @Post(":id/claim")
   @UseGuards(UserSubscriptionGuard)
   @HttpCode(HttpStatus.OK)
-  async claimSubscriptionPackage(@Body() body: ClaimSubscriptionDto) {
-    return this.subscriptionService.claimSubscriptionPackage(body);
+  async claimSubscriptionPackage(
+    @Param("id") id: string,
+    @Body() body: ClaimSubscriptionDto,
+  ) {
+    return this.subscriptionService.claimSubscriptionPackage(id, body);
   }
 
   @Patch(":id/resume")

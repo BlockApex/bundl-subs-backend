@@ -111,6 +111,10 @@ export class CreateServiceDto {
   walletAddress?: string;
 
   @IsOptional()
+  @IsString()
+  claimInstructionsTemplate?: string;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PackageDto)

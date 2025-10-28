@@ -264,7 +264,7 @@ export class SubscriptionService {
         populate: {
           path: "selectedPackages.service",
           select:
-            "name logo category description allowedCustomerTypes isActive",
+            "name logo category description allowedCustomerTypes isActive claimInstructionsTemplate",
         },
       },
       "user",
@@ -272,8 +272,15 @@ export class SubscriptionService {
   }
 
   async claimSubscriptionPackage(
+    id: string,
     claimSubscriptionDto: ClaimSubscriptionDto,
   ): Promise<UserSubscriptionDocument> {
+    if (id !== claimSubscriptionDto.subscription) {
+      throw new BadRequestException(
+        "Subscription id in path and body should be same",
+      );
+    }
+
     const subscription = (await this.findSubscriptionById(
       claimSubscriptionDto.subscription,
     ))!;
@@ -303,10 +310,27 @@ export class SubscriptionService {
       claimSubscriptionDto.providedFormFields,
       packageToClaim.package.requiredFormFields,
     );
+
+    // Build claim instructions from template by replacing {fieldName} with provided values
+    const template = packageToClaim.service.claimInstructionsTemplate;
+    let claimInstructions: string | undefined;
+    if (template) {
+      const fieldValues = new Map(
+        claimSubscriptionDto.providedFormFields.map((f) => [
+          f.fieldName,
+          f.fieldValue,
+        ]),
+      );
+      claimInstructions = template.replace(/\{([^}]+)\}/g, (_m, key) => {
+        const value = fieldValues.get(String(key));
+        return value !== undefined && value !== null ? String(value) : "";
+      });
+    }
     subscription.claimedPackages.push({
       service: packageToClaim.service,
       package: packageToClaim.package,
       providedFormFields: claimSubscriptionDto.providedFormFields,
+      claimInstructions,
       createdAt: new Date(),
       updatedAt: new Date(),
     });

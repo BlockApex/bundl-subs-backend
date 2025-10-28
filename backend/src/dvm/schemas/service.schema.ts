@@ -38,6 +38,9 @@ export class Service {
   @Prop({ required: false, select: false })
   webhookUrl: string;
 
+  @Prop({ required: false, select: false })
+  claimInstructionsTemplate?: string;
+
   @Prop({ default: Date.now, select: false })
   createdAt: Date;
 

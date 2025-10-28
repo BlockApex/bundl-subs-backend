@@ -20,6 +20,9 @@ export class ClaimedPackage {
   @Prop({ type: [ProvidedFormFieldSchema], default: [] })
   providedFormFields: ProvidedFormField[];
 
+  @Prop({ required: false })
+  claimInstructions?: string;
+
   @Prop({ default: Date.now })
   createdAt: Date;
 
