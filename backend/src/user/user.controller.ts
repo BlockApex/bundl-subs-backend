@@ -9,11 +9,11 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import express from "express";
+import { CurrentUser } from "src/auth/decorators/current-user.decorator";
 import { AdminGuard } from "../auth/admin.guard";
 import { AuthGuard } from "../auth/auth.guard";
-import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { LoginDto } from "./dto/login.dto";
-import { User } from "./schemas/user.schema";
+import type { UserDocument } from "./schemas/user.schema";
 import { UserService } from "./user.service";
 
 @Controller("user")
@@ -42,7 +42,7 @@ export class UserController {
 
   @Get("profile")
   @UseGuards(AuthGuard)
-  getProfile(@CurrentUser() user: User) {
+  getProfile(@CurrentUser() user: UserDocument) {
     return {
       walletAddress: user.walletAddress,
       isAdmin: user.isAdmin,
@@ -50,9 +50,16 @@ export class UserController {
     };
   }
 
+  @Get("activity")
+  @UseGuards(AuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async getActivity(@CurrentUser() user: UserDocument) {
+    return this.userService.getActivity(user.id as string);
+  }
+
   @Get("admin")
   @UseGuards(AdminGuard)
-  getAdminPanel(@CurrentUser() user: User) {
+  getAdminPanel(@CurrentUser() user: UserDocument) {
     return {
       walletAddress: user.walletAddress,
       isAdmin: user.isAdmin,

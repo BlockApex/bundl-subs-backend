@@ -8,11 +8,24 @@ import { ConfigService } from "@nestjs/config";
 import { InjectModel } from "@nestjs/mongoose";
 import { PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
-import { Model } from "mongoose";
+import { Model, Types } from "mongoose";
+import {
+  UserSubscription,
+  UserSubscriptionDocument,
+} from "src/subscription/schemas/user-subscription.schema";
 import { sign } from "tweetnacl";
 import { AuthService } from "../auth/auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { User, UserDocument } from "./schemas/user.schema";
+
+type UserActivityItem = {
+  bundle: unknown;
+  date: Date;
+  text: string;
+  status: string;
+  statusThemeClass: "success" | "warning" | "error" | "info";
+  type: "invoice" | "paymentHistory" | "subscription";
+};
 
 @Injectable()
 export class UserService {
@@ -21,6 +34,8 @@ export class UserService {
     private configService: ConfigService,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private authService: AuthService,
+    @InjectModel(UserSubscription.name)
+    private readonly userSubscriptionModel: Model<UserSubscriptionDocument>,
   ) {}
 
   async login(
@@ -111,5 +126,65 @@ export class UserService {
       throw new NotFoundException("User not found");
     }
     return user;
+  }
+
+  async getActivity(userId: string): Promise<UserActivityItem[]> {
+    const subs = await this.userSubscriptionModel
+      .find({ user: Types.ObjectId.createFromHexString(userId) })
+      .populate({
+        path: "bundle",
+        select:
+          "name description color isPreset selectedPackages frequency totalFirstDiscountedPrice totalOriginalPrice priceEveryInterval isActive createdBy",
+        populate: {
+          path: "selectedPackages.service",
+          select:
+            "name logo category description allowedCustomerTypes isActive",
+        },
+      })
+      .lean();
+
+    const activity: UserActivityItem[] = [];
+
+    for (const sub of subs) {
+      // subscription created
+      if (sub.subscribeDate) {
+        activity.push({
+          bundle: sub.bundle,
+          date: sub.createdAt,
+          text: `You subscribed to ${sub.bundle.name}`,
+          status: "Subscribed",
+          statusThemeClass: "info",
+          type: "subscription",
+        });
+      }
+
+      // invoices and payment history within
+      for (const inv of sub.invoices ?? []) {
+        activity.push({
+          bundle: sub.bundle,
+          date: new Date(inv.date),
+          text: `Invoice of $${inv.amount} created`,
+          status: "Renewal Due",
+          statusThemeClass: "warning",
+          type: "invoice",
+        });
+
+        for (const ph of inv.paymentHistory ?? []) {
+          activity.push({
+            bundle: sub.bundle,
+            date: new Date(ph.time),
+            text: ph.txHash
+              ? `Payment ${ph.status} (${ph.txHash.slice(0, 6)}...${ph.txHash.slice(-4)})`
+              : `Payment ${ph.status}`,
+            status: ph.status === "success" ? "Success" : "Failed",
+            statusThemeClass: ph.status === "success" ? "success" : "error",
+            type: "paymentHistory",
+          });
+        }
+      }
+    }
+
+    activity.sort((a, b) => b.date.getTime() - a.date.getTime());
+    return activity;
   }
 }
