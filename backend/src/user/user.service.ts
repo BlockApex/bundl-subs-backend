@@ -10,6 +10,7 @@ import { PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
 import { Model, Types } from "mongoose";
 import {
+  InvoiceDocument,
   UserSubscription,
   UserSubscriptionDocument,
 } from "src/subscription/schemas/user-subscription.schema";
@@ -23,6 +24,7 @@ type UserActivityItem = {
   date: Date;
   text: string;
   status: string;
+  amount: number;
   statusThemeClass: "success" | "warning" | "error" | "info";
   type: "invoice" | "paymentHistory" | "subscription";
 };
@@ -153,6 +155,7 @@ export class UserService {
           date: sub.createdAt,
           text: `You subscribed to ${sub.bundle.name}`,
           status: "Subscribed",
+          amount: sub.bundle.totalFirstDiscountedPrice,
           statusThemeClass: "info",
           type: "subscription",
         });
@@ -160,11 +163,13 @@ export class UserService {
 
       // invoices and payment history within
       for (const inv of sub.invoices ?? []) {
+        const invId = (inv as InvoiceDocument)._id.toString("hex");
         activity.push({
           bundle: sub.bundle,
           date: new Date(inv.date),
-          text: `Invoice of $${inv.amount} created`,
+          text: `Invoice ${invId.slice(0, 6)}...${invId.slice(-4)} created for auto-pay scheduled`,
           status: "Renewal Due",
+          amount: inv.amount,
           statusThemeClass: "warning",
           type: "invoice",
         });
@@ -173,11 +178,10 @@ export class UserService {
           activity.push({
             bundle: sub.bundle,
             date: new Date(ph.time),
-            text: ph.txHash
-              ? `Payment ${ph.status} (${ph.txHash.slice(0, 6)}...${ph.txHash.slice(-4)})`
-              : `Payment ${ph.status}`,
+            text: `Payment ${ph.status} for invoice ${invId.slice(0, 6)}...${invId.slice(-4)}`,
             status: ph.status === "success" ? "Success" : "Failed",
             statusThemeClass: ph.status === "success" ? "success" : "error",
+            amount: inv.amount,
             type: "paymentHistory",
           });
         }
