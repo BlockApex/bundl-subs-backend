@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   UseGuards,
 } from "@nestjs/common";
@@ -60,5 +61,26 @@ export class SubscriptionController {
   @HttpCode(HttpStatus.OK)
   async claimSubscriptionPackage(@Body() body: ClaimSubscriptionDto) {
     return this.subscriptionService.claimSubscriptionPackage(body);
+  }
+
+  @Patch(":id/resume")
+  @UseGuards(UserSubscriptionGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async resumeSubscription(@Param("id") id: string) {
+    await this.subscriptionService.resumeSubscription(id);
+  }
+
+  @Patch(":id/pause")
+  @UseGuards(UserSubscriptionGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async pauseSubscription(@Param("id") id: string) {
+    await this.subscriptionService.pauseSubscription(id);
+  }
+
+  @Patch(":id/cancel")
+  @UseGuards(UserSubscriptionGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async cancelSubscription(@Param("id") id: string) {
+    await this.subscriptionService.cancelSubscription(id);
   }
 }

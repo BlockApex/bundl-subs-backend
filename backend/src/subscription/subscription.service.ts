@@ -315,6 +315,49 @@ export class SubscriptionService {
     return subscription;
   }
 
+  async pauseSubscription(subscriptionId: string): Promise<void> {
+    const subscription =
+      (await this.userSubscriptionModel.findById(subscriptionId))!;
+    if (subscription.status == "paused") {
+      return;
+    }
+    if (subscription.status !== "active") {
+      throw new BadRequestException(
+        `"${subscription.status}" subscription cannot be paused`,
+      );
+    }
+    subscription.status = "paused";
+    await subscription.save();
+  }
+
+  async resumeSubscription(subscriptionId: string): Promise<void> {
+    const subscription =
+      (await this.userSubscriptionModel.findById(subscriptionId))!;
+    if (subscription.status == "active") {
+      return;
+    }
+    if (subscription.status !== "paused") {
+      throw new BadRequestException(
+        `Trying to resume a "${subscription.status}" subscription`,
+      );
+    }
+    subscription.status = "active";
+    await subscription.save();
+  }
+
+  async cancelSubscription(subscriptionId: string): Promise<void> {
+    const subscription =
+      (await this.userSubscriptionModel.findById(subscriptionId))!;
+    if (subscription.status == "cancelled") {
+      return;
+    }
+    if (subscription.status !== "active") {
+      throw new BadRequestException("We can only cancel active subscription.");
+    }
+    subscription.status = "cancelled";
+    await subscription.save();
+  }
+
   private async getApprovalInstruction(
     controllerAddress: string,
     userWallet: string,
