@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { HydratedDocument, Types } from "mongoose";
 import { Bundle } from "src/bundle/schemas/bundle.schema";
 import { User } from "src/user/schemas/user.schema";
+import { ClaimedPackage, ClaimedPackageSchema } from "./claimed-package.schema";
 
 export type UserSubscriptionDocument = HydratedDocument<UserSubscription>;
 
@@ -93,6 +94,9 @@ export class UserSubscription {
 
   @Prop({ type: [InvoiceSchema], default: [] })
   invoices: Invoice[];
+
+  @Prop({ type: [ClaimedPackageSchema], default: [] })
+  claimedPackages: ClaimedPackage[];
 
   @Prop({ default: Date.now })
   createdAt: Date;

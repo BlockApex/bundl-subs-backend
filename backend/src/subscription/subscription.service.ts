@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -24,11 +25,17 @@ import { createHash } from "crypto";
 import { Model, Types } from "mongoose";
 import { BundleService } from "src/bundle/bundle.service";
 import type { BundleDocument } from "src/bundle/schemas/bundle.schema";
+import { PackageDocument } from "src/dvm/schemas/package.schema";
+import { RequiredFormField } from "src/dvm/schemas/required-form-field.schema";
 import {
   UserSubscription,
   UserSubscriptionDocument,
 } from "src/subscription/schemas/user-subscription.schema";
 import type { UserDocument } from "src/user/schemas/user.schema";
+import {
+  ClaimSubscriptionDto,
+  ProvidedFormFieldDto,
+} from "./dto/claim-subscription.dto";
 import { CreateSubscriptionDto } from "./dto/create-subscription.dto";
 import { PrepareSubscriptionDto } from "./dto/prepare-subscription.dto";
 
@@ -244,6 +251,68 @@ export class SubscriptionService {
             "name logo category description allowedCustomerTypes isActive",
         },
       });
+  }
+
+  async findSubscriptionById(
+    subscriptionId: string,
+  ): Promise<UserSubscriptionDocument | null> {
+    return this.userSubscriptionModel.findById(subscriptionId).populate([
+      {
+        path: "bundle",
+        select:
+          "name description color isPreset selectedPackages frequency totalFirstDiscountedPrice totalOriginalPrice priceEveryInterval isActive createdBy",
+        populate: {
+          path: "selectedPackages.service",
+          select:
+            "name logo category description allowedCustomerTypes isActive",
+        },
+      },
+      "user",
+    ]);
+  }
+
+  async claimSubscriptionPackage(
+    claimSubscriptionDto: ClaimSubscriptionDto,
+  ): Promise<UserSubscriptionDocument> {
+    const subscription = (await this.findSubscriptionById(
+      claimSubscriptionDto.subscription,
+    ))!;
+    if (subscription.status !== "active") {
+      throw new BadRequestException("Subscription is not active");
+    }
+
+    if (
+      subscription.claimedPackages.find(
+        (claimedPackage) =>
+          (claimedPackage.package as PackageDocument).id ===
+          claimSubscriptionDto.package,
+      )
+    ) {
+      throw new ConflictException("Package already claimed");
+    }
+
+    const packageToClaim = subscription.bundle.selectedPackages.find(
+      (selectedPackage) =>
+        (selectedPackage.package as PackageDocument).id ===
+        claimSubscriptionDto.package,
+    );
+    if (!packageToClaim) {
+      throw new NotFoundException("Package not found in subscription");
+    }
+    this.validateProvidedFormFields(
+      claimSubscriptionDto.providedFormFields,
+      packageToClaim.package.requiredFormFields,
+    );
+    subscription.claimedPackages.push({
+      service: packageToClaim.service,
+      package: packageToClaim.package,
+      providedFormFields: claimSubscriptionDto.providedFormFields,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await subscription.save();
+
+    return subscription;
   }
 
   private async getApprovalInstruction(
@@ -463,6 +532,41 @@ export class SubscriptionService {
         return 1;
       default:
         return 0;
+    }
+  }
+
+  private validateProvidedFormFields(
+    providedFormFields: ProvidedFormFieldDto[],
+    requiredFormFields: RequiredFormField[],
+  ): void {
+    for (const requiredFormField of requiredFormFields) {
+      const providedFormField = providedFormFields.find(
+        (providedFormField) =>
+          providedFormField.fieldName === requiredFormField.fieldName,
+      );
+      if (!providedFormField) {
+        throw new BadRequestException(
+          `Expected form field "${requiredFormField.fieldName}" not provided`,
+        );
+      }
+      if (
+        (!providedFormField.fieldValue ||
+          providedFormField.fieldValue === "") &&
+        !requiredFormField.optional
+      ) {
+        throw new BadRequestException(
+          `Non-optional form field "${requiredFormField.fieldName}" is given null value`,
+        );
+      }
+      if (
+        requiredFormField.fieldType == "number" &&
+        providedFormField.fieldValue &&
+        isNaN(Number(providedFormField.fieldValue))
+      ) {
+        throw new BadRequestException(
+          `Form field "${requiredFormField.fieldName}" is given a non-number value`,
+        );
+      }
     }
   }
 }
