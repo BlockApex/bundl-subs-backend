@@ -380,7 +380,8 @@ export class PaymentService {
     const nextPaymentDate =
       Date.now() +
       this.frequenceToDays(subscription.bundle.frequency) *
-        this.SECONDS_PER_DAY;
+        this.SECONDS_PER_DAY *
+        1000;
     subscription.nextPaymentDate = new Date(nextPaymentDate);
     await subscription.save();
   }
