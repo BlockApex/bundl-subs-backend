@@ -18,8 +18,9 @@ import {
   Keypair,
   PublicKey,
   SystemProgram,
-  Transaction,
   TransactionInstruction,
+  TransactionMessage,
+  VersionedTransaction,
 } from "@solana/web3.js";
 import { createHash } from "crypto";
 import { Model, Types } from "mongoose";
@@ -79,8 +80,7 @@ export class SubscriptionService {
     const existing = await this.userSubscriptionModel.findOne(filter).lean();
     if (
       existing &&
-      existing.status !== "cancelled" &&
-      existing.status !== "suspended"
+      !["cancelled", "suspended", "intended"].includes(existing.status)
     ) {
       throw new BadRequestException("Subscription already exists");
     }
@@ -207,12 +207,7 @@ export class SubscriptionService {
     transactions.push({
       name: "Add Bundle",
       desc: "This transaction adds the bundle to your subscription controller. By approving this transaction, you allow the subscription controller to spend your funds for this bundle.",
-      transaction: bundleTx
-        .serialize({
-          requireAllSignatures: false,
-          verifySignatures: false,
-        })
-        .toString("base64"),
+      transaction: bundleTx.serialize().toString(),
     });
 
     return {
@@ -398,7 +393,7 @@ export class SubscriptionService {
       tokenAccount,
       controllerPda,
       userPublicKey,
-      amount,
+      amount + 1,
       [],
       TOKEN_PROGRAM_ID,
     );
@@ -482,18 +477,17 @@ export class SubscriptionService {
     instruction: TransactionInstruction,
     privateKey: Uint8Array,
     userWalletAddress: string,
-  ): Promise<Transaction> {
+  ): Promise<VersionedTransaction> {
     const userWalletAddressPublicKey = new PublicKey(userWalletAddress);
     const walletKeyPair = Keypair.fromSecretKey(privateKey);
-    const transaction = new Transaction({
-      blockhash: (await this.getSolanaConnection().getLatestBlockhash())
+    const message = new TransactionMessage({
+      instructions: [instruction],
+      payerKey: userWalletAddressPublicKey,
+      recentBlockhash: (await this.getSolanaConnection().getLatestBlockhash())
         .blockhash,
-      lastValidBlockHeight: (
-        await this.getSolanaConnection().getLatestBlockhash()
-      ).lastValidBlockHeight,
-    }).add(instruction);
-    transaction.feePayer = userWalletAddressPublicKey;
-    transaction.partialSign(walletKeyPair);
+    }).compileToV0Message();
+    const transaction = new VersionedTransaction(message);
+    transaction.sign([walletKeyPair]);
     return transaction;
   }
 
