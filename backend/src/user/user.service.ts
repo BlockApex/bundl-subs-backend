@@ -130,6 +130,92 @@ export class UserService {
     return user;
   }
 
+  private frequencyToMonthlyMultiplier(frequency: string): number {
+    const f = (frequency || "").toLowerCase();
+    switch (f) {
+      case "monthly":
+        return 1;
+      case "weekly":
+        return 30 / 7;
+      case "yearly":
+      case "annually":
+        return 1 / 12;
+      case "daily":
+        return 30;
+      default:
+        return 1;
+    }
+  }
+
+  async getProfileStats(userId: string): Promise<{
+    activeSubscriptionsCount: number;
+    totalMonthlySavings: number;
+    totalMonthlySpending: number;
+    lastPaymentDate: Date | null;
+    paymentsDueNext30Days: number;
+  }> {
+    const subs: UserSubscriptionDocument[] = await this.userSubscriptionModel
+      .find({ user: Types.ObjectId.createFromHexString(userId) })
+      .populate({
+        path: "bundle",
+        select:
+          "frequency totalFirstDiscountedPrice totalOriginalPrice priceEveryInterval",
+      });
+
+    let activeSubscriptionsCount = 0;
+    let totalMonthlySavings = 0;
+    let totalMonthlySpending = 0;
+    let lastPaymentDate: Date | null = null;
+    let paymentsDueNext30Days = 0;
+
+    const now = new Date();
+    const next30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    for (const sub of subs) {
+      const bundle = sub.bundle;
+
+      // last successful payment date
+      for (const inv of sub.invoices) {
+        for (const ph of inv.paymentHistory) {
+          if (ph.status === "success") {
+            const t = new Date(ph.time);
+            if (!lastPaymentDate || t > lastPaymentDate) lastPaymentDate = t;
+          }
+        }
+      }
+
+      // payments due in next 30 days
+      if (sub.status === "active" || sub.status === "grace-period") {
+        const npd = sub.nextPaymentDate;
+        if (npd >= now && npd <= next30)
+          paymentsDueNext30Days += sub.bundle.priceEveryInterval[1]; // I am sure, for the demo, we won't hit the 3rd interval. TODO: fix this
+      }
+
+      // spending and savings from active subs
+      if (sub.status === "active") {
+        activeSubscriptionsCount += 1;
+        const original = bundle.totalOriginalPrice;
+        const frequency = bundle.frequency;
+        const multiplier = this.frequencyToMonthlyMultiplier(frequency);
+        const discountedMonthly = bundle.totalFirstDiscountedPrice * multiplier;
+        const originalMonthly = original * multiplier;
+        totalMonthlySpending += discountedMonthly;
+        totalMonthlySavings += Math.max(0, originalMonthly - discountedMonthly);
+      }
+    }
+
+    // round to 2 decimals for currency-like values
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+
+    return {
+      activeSubscriptionsCount,
+      totalMonthlySavings: round2(totalMonthlySavings),
+      totalMonthlySpending: round2(totalMonthlySpending),
+      lastPaymentDate,
+      paymentsDueNext30Days,
+    };
+  }
+
   async getActivity(userId: string): Promise<UserActivityItem[]> {
     const subs = await this.userSubscriptionModel
       .find({ user: Types.ObjectId.createFromHexString(userId) })

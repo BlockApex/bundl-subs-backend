@@ -57,6 +57,13 @@ export class UserController {
     return this.userService.getActivity(user.id as string);
   }
 
+  @Get("profile-stats")
+  @UseGuards(AuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async getProfileStats(@CurrentUser() user: UserDocument) {
+    return this.userService.getProfileStats(user.id as string);
+  }
+
   @Get("admin")
   @UseGuards(AdminGuard)
   getAdminPanel(@CurrentUser() user: UserDocument) {
