@@ -155,7 +155,10 @@ export class UserService {
     paymentsDueNext30Days: number;
   }> {
     const subs: UserSubscriptionDocument[] = await this.userSubscriptionModel
-      .find({ user: Types.ObjectId.createFromHexString(userId) })
+      .find({
+        user: Types.ObjectId.createFromHexString(userId),
+        invoices: { $exists: true, $ne: [] },
+      })
       .populate({
         path: "bundle",
         select:
