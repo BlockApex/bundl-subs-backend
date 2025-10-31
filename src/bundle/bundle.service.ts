@@ -408,6 +408,7 @@ export class BundleService {
       }> = {
       ...updateData,
     };
+    let bundle: Bundle | null;
     if (updateData.selectedPackages) {
       const previewBundle = await this.previewBundle({
         selectedPackages: updateData.selectedPackages,
@@ -416,10 +417,29 @@ export class BundleService {
         previewBundle.totalFirstDiscountedPrice;
       computedUpdateData.totalOriginalPrice = previewBundle.totalOriginalPrice;
       computedUpdateData.priceEveryInterval = previewBundle.priceEveryInterval;
+      bundle = await this.bundleModel
+        .findByIdAndUpdate(
+          id,
+          {
+            ...computedUpdateData,
+            selectedPackages: previewBundle.packages.map((pkg) => ({
+              service: pkg.service,
+              package: pkg.package,
+              applicableOffers: pkg.applicableOffers,
+            })),
+            frequency: previewBundle.frequency,
+            totalFirstDiscountedPrice: previewBundle.totalFirstDiscountedPrice,
+            totalOriginalPrice: previewBundle.totalOriginalPrice,
+            priceEveryInterval: previewBundle.priceEveryInterval,
+          },
+          { new: true },
+        )
+        .exec();
+    } else {
+      bundle = await this.bundleModel
+        .findByIdAndUpdate(id, computedUpdateData, { new: true })
+        .exec();
     }
-    const bundle = await this.bundleModel
-      .findByIdAndUpdate(id, computedUpdateData, { new: true })
-      .exec();
     if (!bundle) {
       throw new NotFoundException("Bundle not found");
     }
