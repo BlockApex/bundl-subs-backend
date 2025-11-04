@@ -1,168 +1,161 @@
+# Bundl Subs Backend
+
 <p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
+  <a href="http://bundlsubs.com/" target="blank"><img src="https://raw.githubusercontent.com/BlockApex/bundl-subs/refs/heads/main/assets/logo-with-text.png" width="240" alt="BundleSubs Logo" /></a>
 </p>
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+**NestJS backend API for Bundl Subs** - A subscription bundling platform powered by Solana and stablecoins. This backend allows bundle management to users and admin, supports merchant onboarding, service offering, subscription lifecycle management, and manages payment processing and entitlements.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+<a href="https://arena.colosseum.org/projects/explore/bundl" target="blank"><img src="https://raw.githubusercontent.com/BlockApex/bundl-subs/refs/heads/main/assets/colloseum.svg" style="width:20px; padding-right: 8px;" alt="Colloseum Logo"/></a>
+<a href="https://www.legends.fun/products/f47715cc-cd61-414e-83b9-229786e48817" target="blank"><img src="https://raw.githubusercontent.com/BlockApex/bundl-subs/refs/heads/main/assets/legends.png" style="width:22px;" alt="BundleSubs Logo"/></a>
+[![X](https://raw.githubusercontent.com/BlockApex/bundl-subs/refs/heads/main/assets/x.png)](https://x.com/bundlsubs)
+[![Website](https://raw.githubusercontent.com/BlockApex/bundl-subs/refs/heads/main/assets/globe.png)](https://bundlsubs.com)
 
-## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository for Bundl Subs backend with Solana wallet integration.
+## ✨ Features
 
-## Features
+- **📦 Bundle Management**: Create, discover, and manage subscription bundles with real-time pricing calculations
+- **🔄 Subscription Lifecycle**: Full subscription management (create, pause, resume, cancel)
+- **💳 Payment Processing**: Trust minimized auto-renewing subscription.
+- **🏪 DVM Integration**: Merchant and service management system for subscription providers
 
-- **User Management**: Solana wallet-based user registration with signature verification
-- **MongoDB Integration**: User data persistence with Mongoose
-- **Signature Verification**: Cryptographically secure wallet address verification using Solana signatures
+## 🛠️ Tech Stack
 
-## User API
+- **Framework**: [NestJS](https://nestjs.com/) (v11.0.1)
+- **Language**: TypeScript
+- **Database**: MongoDB with [Mongoose](https://mongoosejs.com/)
+- **Authentication**: JWT (JSON Web Tokens) via Passport
+- **Blockchain**: [Solana Web3.js](https://solana-labs.github.io/solana-web3.js/)
+- **Validation**: class-validator, class-transformer
+- **Runtime**: Node.js with Express
 
-### Login Endpoint
+## 🏗️ Architecture
 
-**POST** `/user/login`
+The backend follows NestJS module-based architecture:
 
-Login with Solana wallet verification. Creates a new user if they don't exist, or logs in existing users.
+- **Auth Module**: JWT strategy, authentication guards, admin guards
+- **User Module**: User registration, login, profile management
+- **Bundle Module**: Bundle creation, preview, activation/deactivation
+- **Subscription Module**: Subscription lifecycle (prepare, create, pause, resume, cancel, claim)
+- **Payment Module**: Payment processing and invoice management (make payment, auto invoice creation and recurring deductions)
+- **DVM Module**: Service and package management for merchants
 
-**Request Body:**
-```json
-{
-  "walletAddress": "string (required) - Solana wallet public key",
-  "signature": "string (required) - Signature of verification message",
-  "kycInfo": "object (optional) - Additional KYC information"
-}
-```
+## 📚 API Documentation
 
-**Response:**
-```json
-{
-  "walletAddress": "string",
-  "token": "string"
-}
-```
+All API routes, request bodies and example responses are available [here](https://documenter.getpostman.com/view/37696567/2sB3WqszHc).
 
-### Protected Routes
-
-**GET** `/user/profile`
-
-Access user profile (requires authentication).
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
-
-**Response:**
-```json
-{
-  "walletAddress": "string",
-  "message": "This is a protected route"
-}
-```
-
-## Authentication
+## 🔐 Authentication
 
 The API uses JWT (JSON Web Tokens) for authentication:
 
-1. **Login**: Returns a JWT token upon successful authentication
-2. **Protected Routes**: Include the token in the `Authorization` header as `Bearer <token>`
-3. **Token Expiry**: Tokens expire after 7 days
-4. **Auto-registration**: New users are automatically created on first login
+1. **Login Flow**:
+   - User signs a verification message with their Solana wallet
+   - Backend verifies the signature cryptographically
+   - If valid, a JWT token is issued
+   - Token is returned in response body and set as HTTP-only cookie
 
-## Environment Setup
+2. **Protected Routes**:
+   - Include JWT token in `Authorization` header: `Bearer <token>`
+   - Or rely on HTTP-only cookie (set automatically on login)
 
-Create a `.env` file with the following variables:
+3. **Token Expiry**:
+   - Tokens expire after 7 days (configurable)
+
+4. **Auto-registration**:
+   - New users are automatically created on first successful login
+
+5. **Guards**:
+   - `AuthGuard`: Validates JWT token for authenticated users
+   - `AdminGuard`: Validates JWT token and checks admin status
+   - `UserBundleGuard`: Validates user owns the bundle
+   - `UserSubscriptionGuard`: Validates user owns the subscription
+
+## ⚙️ Environment Setup
+
+Create a `.env` file in the `backend/` directory:
 
 ```env
+# Database
 MONGODB_URI=mongodb://localhost:27017/bundl-subs
+
+# Server
 PORT=3000
-VERIFY_WALLET_TEXT=Sign this message to verify your wallet address
+NODE_ENV=development
+
+# Authentication
 JWT_SECRET=your-super-secret-jwt-key
+VERIFY_WALLET_TEXT=Sign this message to verify your wallet address
+
+# Solana (if applicable)
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+# or
+# SOLANA_RPC_URL=https://api.devnet.solana.com
+
+# HTTPS (optional, for development)
+# SSL certificates should be placed in ./secrets/
+# - private-key.pem
+# - public-certificate.pem
 ```
 
-## Project setup
+### Required Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `MONGODB_URI` | MongoDB connection string |
+| `JWT_SECRET` | Secret key for JWT signing |
+| `VERIFY_WALLET_TEXT` | Message template for wallet verification |
+
+## 📦 Installation
 
 ```bash
-$ npm install
+# Install dependencies
+npm install
 ```
 
-## Compile and run the project
+## 🚀 Running the Project
 
 ```bash
-# development
-$ npm run start
+# Development mode (with watch)
+npm run start:dev
 
-# watch mode
-$ npm run start:dev
+# Development mode (with debug)
+npm run start:debug
 
-# production mode
-$ npm run start:prod
+# Production build
+npm run build
+
+# Production mode
+npm run start:prod
+
+# Standard start
+npm run start
 ```
 
-## Run tests
+The server will start on `http://localhost:3000` (or the port specified in `.env`).
 
-```bash
-# unit tests
-$ npm run test
+In development mode, the server also starts an HTTPS server on port 443 (requires SSL certificates in `./secrets/`).
 
-# e2e tests
-$ npm run test:e2e
+## 🔒 Security Features
 
-# test coverage
-$ npm run test:cov
-```
+- **Cryptographic Signature Verification**: Solana wallet signatures are verified using `tweetnacl`
+- **JWT Authentication**: Secure token-based authentication
+- **Input Validation**: All inputs validated using `class-validator`
+- **CORS Configuration**: Restricted to allowed origins
+- **HTTP-only Cookies**: Secure cookie storage for tokens
+- **Role-Based Access Control**: Admin and user-specific guards
 
-## Deployment
+## 🌐 CORS Configuration
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+Allowed origins:
+- `blockapex.io`
+- `localhost`
+- `bundlsubs.com`
+- `172.18.0.20` (development IP)
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Credentials are enabled for cross-origin requests.
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+## 📖 Additional Resources
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- [NestJS Documentation](https://docs.nestjs.com)
+- [Solana Web3.js Documentation](https://solana-labs.github.io/solana-web3.js/)
+- [Mongoose Documentation](https://mongoosejs.com/docs/)
