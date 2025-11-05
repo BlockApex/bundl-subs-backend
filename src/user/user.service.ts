@@ -8,7 +8,9 @@ import { ConfigService } from "@nestjs/config";
 import { InjectModel } from "@nestjs/mongoose";
 import { PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
+import { writeFile } from "fs";
 import { Model, Types } from "mongoose";
+import { extname, join } from "path";
 import {
   InvoiceDocument,
   UserSubscription,
@@ -279,5 +281,41 @@ export class UserService {
 
     activity.sort((a, b) => b.date.getTime() - a.date.getTime());
     return activity;
+  }
+
+  async updateKycInfo(
+    userId: string,
+    kycInfo: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const updated = await this.userModel.findByIdAndUpdate(
+      userId,
+      { kycInfo, updatedAt: new Date() },
+      { new: true },
+    );
+    if (!updated) {
+      throw new NotFoundException("User not found");
+    }
+    return updated.kycInfo || {};
+  }
+
+  async uploadImage(newFile: Express.Multer.File) {
+    if (!newFile) {
+      throw new BadRequestException("No file uploaded");
+    }
+    const uploadsDir = this.configService.get<string>("UPLOADS_DIR")!;
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const ext = extname(newFile.originalname as string).toLowerCase();
+    const filename = `${unique}${ext}`;
+    const fullPath = join(uploadsDir, filename);
+    const promise = new Promise<void>((resolve, reject) => {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+      writeFile(fullPath, newFile.buffer, (err) => {
+        if (err) reject(err);
+        resolve();
+      });
+    });
+    await promise;
+    return `${this.configService.get("UPLOADS_PREFIX")}/${filename}`;
   }
 }

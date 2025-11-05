@@ -19,13 +19,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
     logger: ["error", "warn", "log", "debug", "verbose"],
     cors: {
-      origin: [
-        /blockapex\.io$/,
-        /vercel\.app$/,
-        /localhost$/,
-        /bundlsubs\.com$/,
-        /172.18.0.20/,
-      ],
+      origin: [/localhost$/, /bundlsubs\.com$/, /172.18.0.20/],
       optionsSuccessStatus: 200,
       credentials: true,
     },
@@ -46,7 +40,6 @@ async function bootstrap() {
 
   // Read port from config (e.g., .env file)
   const port = configService.get<number>("PORT") || 3000;
-
   await app.init();
   const httpServer = http.createServer(server).listen(port);
   new Logger("bootstrap").log(`🚀 App is running on http://localhost:${port}`);
