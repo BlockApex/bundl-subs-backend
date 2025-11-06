@@ -5,6 +5,8 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { InjectModel } from "@nestjs/mongoose";
+import { Cron } from "@nestjs/schedule";
 import {
   getAccount,
   getAssociatedTokenAddress,
@@ -23,9 +25,13 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { createHash } from "crypto";
+import { Model } from "mongoose";
 import { BundleService } from "src/bundle/bundle.service";
 import type { BundleDocument } from "src/bundle/schemas/bundle.schema";
-import { UserSubscriptionDocument } from "src/subscription/schemas/user-subscription.schema";
+import {
+  UserSubscription,
+  UserSubscriptionDocument,
+} from "src/subscription/schemas/user-subscription.schema";
 import { SubscriptionService } from "src/subscription/subscription.service";
 import type { UserDocument } from "src/user/schemas/user.schema";
 import { TriggerPaymentDto } from "./dto/trigger-payment.dto";
@@ -41,6 +47,8 @@ export class PaymentService {
   private readonly connection: Connection;
 
   constructor(
+    @InjectModel(UserSubscription.name)
+    private readonly userSubscriptionModel: Model<UserSubscriptionDocument>,
     private readonly bundleService: BundleService,
     private readonly subscriptionService: SubscriptionService,
     private readonly configService: ConfigService,
@@ -300,12 +308,14 @@ export class PaymentService {
 
     // Convert arguments to Buffers
     const amountsBuf = Buffer.concat(
-      Array.from({ length: 5 }, (_, i) =>
-        Buffer.from(
-          new BigUint64Array([
-            BigInt(Math.ceil((splittedAmounts[i] ?? 0) * 1e6)),
-          ]).buffer,
-        ),
+      Array.from(
+        { length: this.configService.get<number>("MAX_BUNDLE_SIZE")! },
+        (_, i) =>
+          Buffer.from(
+            new BigUint64Array([
+              BigInt(Math.ceil((splittedAmounts[i] ?? 0) * 1e6)),
+            ]).buffer,
+          ),
       ),
     );
 
@@ -398,6 +408,113 @@ export class PaymentService {
         return 1;
       default:
         return 0;
+    }
+  }
+
+  /**
+   * Cron job that runs every hour to create invoices for active subscriptions
+   * that have passed their nextPaymentDate.
+   * This only creates invoices and does not trigger payments.
+   */
+  @Cron("0 * * * *") // Run every hour at minute 0
+  async createInvoicesForDueSubscriptions() {
+    this.logger.log("Running cron job: createInvoicesForDueSubscriptions");
+    const now = new Date();
+
+    try {
+      // Find all active subscriptions where nextPaymentDate has passed
+      const dueSubscriptions = await this.userSubscriptionModel
+        .find({
+          status: "active",
+          nextPaymentDate: { $lte: now },
+        })
+        .populate({
+          path: "bundle",
+          select:
+            "priceEveryInterval totalFirstDiscountedPrice frequency selectedPackages",
+        })
+        .exec();
+
+      this.logger.log(
+        `Found ${dueSubscriptions.length} subscriptions with due payments`,
+      );
+
+      let invoicesCreated = 0;
+
+      for (const subscription of dueSubscriptions) {
+        try {
+          // Check if there's already a pending invoice for this subscription
+          const hasPendingInvoice = subscription.invoices.some(
+            (invoice) => invoice.status === "pending",
+          );
+
+          if (hasPendingInvoice) {
+            this.logger.debug(
+              `Subscription ${subscription.id} already has a pending invoice, skipping`,
+            );
+            continue;
+          }
+
+          const bundle = subscription.bundle as BundleDocument;
+
+          // Calculate the amount based on the interval
+          // The first payment uses totalFirstDiscountedPrice
+          // Subsequent payments use priceEveryInterval array
+          // Count paid invoices (excluding the first one) to determine interval index
+          const paidInvoicesCount = subscription.invoices.filter(
+            (invoice) => invoice.status === "paid",
+          ).length;
+
+          let amount: number;
+          if (paidInvoicesCount === 0) {
+            // This shouldn't happen for active subscriptions, but handle it
+            amount = bundle.totalFirstDiscountedPrice;
+          } else {
+            // Use the interval index (paidInvoicesCount - 1) for recurring payments
+            // The first paid invoice is the first payment, so subsequent payments start at index 0
+            const intervalIndex = paidInvoicesCount - 1;
+            const priceArray = bundle.priceEveryInterval || [];
+
+            if (intervalIndex < priceArray.length) {
+              amount = priceArray[intervalIndex];
+            } else {
+              // If we've exceeded the array length, use the last element
+              amount =
+                priceArray.length > 0
+                  ? priceArray[priceArray.length - 1]
+                  : bundle.totalFirstDiscountedPrice;
+            }
+          }
+
+          // Create new invoice
+          const invoice = {
+            date: new Date(),
+            status: "pending" as const,
+            amount,
+            paymentHistory: [],
+          };
+
+          subscription.invoices.push(invoice);
+          await subscription.save();
+
+          invoicesCreated++;
+          this.logger.debug(
+            `Created invoice for subscription ${subscription.id} with amount ${amount}`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `Error creating invoice for subscription ${subscription.id}: ${error}`,
+          );
+        }
+      }
+
+      this.logger.log(
+        `Cron job completed: Created ${invoicesCreated} invoices`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error in createInvoicesForDueSubscriptions cron job: ${error}`,
+      );
     }
   }
 }
