@@ -15,12 +15,14 @@ import { ShutdownObserver } from "./extras/shutdown-observer";
 import { PaymentModule } from "./payment/payment.module";
 import { SubscriptionModule } from "./subscription/subscription.module";
 import { UserModule } from "./user/user.module";
+import { WaitlistModule } from "./waitlist/waitlist.module";
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ScheduleModule.forRoot(),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
@@ -50,6 +52,7 @@ import { UserModule } from "./user/user.module";
       },
       inject: [ConfigService],
     }),
+    WaitlistModule,
   ],
   controllers: [AppController],
   providers: [AppService, ShutdownObserver],
