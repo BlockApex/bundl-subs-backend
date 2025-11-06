@@ -104,6 +104,9 @@ SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
 | `MONGODB_URI` | MongoDB connection string |
 | `JWT_SECRET` | Secret key for JWT signing |
 | `VERIFY_WALLET_TEXT` | Message template for wallet verification |
+| `MAX_BUNDLE_SIZE` | Reflects the maximum number of subscriptions a user can bundle specified in the Bundl Program on-chain. NOTE: This is set to 10 currently and this may change when program is updated
+| `UPLOADS_DIR` | The path where uploaded media from user should be stored. e.g "uploads" (an uploads directory will be created in working directory)
+| `UPLOADS_PREFIX` | The virtual path that allows the user to access uploaded media. e.g. /static
 
 ## 📦 Installation
 
@@ -138,21 +141,8 @@ In development mode, the server also starts an HTTPS server on port 443 (require
 ## 🔒 Security Features
 
 - **Cryptographic Signature Verification**: Solana wallet signatures are verified using `tweetnacl`
-- **JWT Authentication**: Secure token-based authentication
+- **JWT Authentication**: Secure role-based token-based authentication
 - **Input Validation**: All inputs validated using `class-validator`
-- **CORS Configuration**: Restricted to allowed origins
-- **HTTP-only Cookies**: Secure cookie storage for tokens
-- **Role-Based Access Control**: Admin and user-specific guards
-
-## 🌐 CORS Configuration
-
-Allowed origins:
-- `blockapex.io`
-- `localhost`
-- `bundlsubs.com`
-- `172.18.0.20` (development IP)
-
-Credentials are enabled for cross-origin requests.
 
 ## 📖 Additional Resources
 
