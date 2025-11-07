@@ -189,7 +189,7 @@ export class PaymentService {
     const programId = new PublicKey(this.PROGRAM_ID);
     const userPublicKey = new PublicKey(userWallet);
     const [controllerPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("controller"), userPublicKey.toBuffer()],
+      [Buffer.from("controller_v2"), userPublicKey.toBuffer()],
       programId,
     );
     const controllerAddress = controllerPda.toBase58();
@@ -411,14 +411,8 @@ export class PaymentService {
     }
   }
 
-  /**
-   * Cron job that runs every hour to create invoices for active subscriptions
-   * that have passed their nextPaymentDate.
-   * This only creates invoices and does not trigger payments.
-   */
-  @Cron("0 * * * *") // Run every hour at minute 0
   async createInvoicesForDueSubscriptions() {
-    this.logger.log("Running cron job: createInvoicesForDueSubscriptions");
+    this.logger.log("createInvoicesForDueSubscriptions");
     const now = new Date();
 
     try {

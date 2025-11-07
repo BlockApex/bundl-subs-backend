@@ -498,7 +498,7 @@ export class SubscriptionService {
     const programId = new PublicKey(this.PROGRAM_ID);
     const userPublicKey = new PublicKey(userWallet);
     const [controllerPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("controller"), userPublicKey.toBuffer()],
+      [Buffer.from("controller_v2"), userPublicKey.toBuffer()],
       programId,
     );
     const controllerAddress = controllerPda.toBase58();
