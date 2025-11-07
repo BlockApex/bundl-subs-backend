@@ -423,7 +423,9 @@ export class BundleService {
           {
             ...computedUpdateData,
             selectedPackages: previewBundle.packages.map((pkg) => ({
-              service: pkg.service,
+              service: Types.ObjectId.createFromHexString(
+                pkg.service.id as string,
+              ),
               package: pkg.package,
               applicableOffers: pkg.applicableOffers,
             })),
