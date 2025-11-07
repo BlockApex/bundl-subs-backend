@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectModel } from "@nestjs/mongoose";
-import { Cron } from "@nestjs/schedule";
+import { Cron, CronExpression } from "@nestjs/schedule";
 import {
   getAccount,
   getAssociatedTokenAddress,
@@ -29,6 +29,7 @@ import { Model } from "mongoose";
 import { BundleService } from "src/bundle/bundle.service";
 import type { BundleDocument } from "src/bundle/schemas/bundle.schema";
 import {
+  InvoiceDocument,
   UserSubscription,
   UserSubscriptionDocument,
 } from "src/subscription/schemas/user-subscription.schema";
@@ -421,11 +422,21 @@ export class PaymentService {
         .find({
           status: "active",
           nextPaymentDate: { $lte: now },
+          invoices: {
+            $not: {
+              $elemMatch: { status: "pending" },
+            },
+          },
         })
         .populate({
           path: "bundle",
           select:
-            "priceEveryInterval totalFirstDiscountedPrice frequency selectedPackages",
+            "name description color isPreset selectedPackages frequency totalFirstDiscountedPrice totalOriginalPrice priceEveryInterval isActive createdBy",
+          populate: {
+            path: "selectedPackages.service",
+            select:
+              "name logo category description allowedCustomerTypes isActive walletAddress",
+          },
         })
         .exec();
 
@@ -437,18 +448,6 @@ export class PaymentService {
 
       for (const subscription of dueSubscriptions) {
         try {
-          // Check if there's already a pending invoice for this subscription
-          const hasPendingInvoice = subscription.invoices.some(
-            (invoice) => invoice.status === "pending",
-          );
-
-          if (hasPendingInvoice) {
-            this.logger.debug(
-              `Subscription ${subscription.id} already has a pending invoice, skipping`,
-            );
-            continue;
-          }
-
           const bundle = subscription.bundle as BundleDocument;
 
           // Calculate the amount based on the interval
@@ -506,9 +505,260 @@ export class PaymentService {
         `Cron job completed: Created ${invoicesCreated} invoices`,
       );
     } catch (error) {
-      this.logger.error(
-        `Error in createInvoicesForDueSubscriptions cron job: ${error}`,
-      );
+      this.logger.error(`Error in createInvoicesForDueSubscriptions: ${error}`);
     }
+  }
+
+  async triggerPendingInvoices() {
+    this.logger.log("triggerInvoicesForDueSubscriptions");
+    try {
+      // Find all active subscriptions where nextPaymentDate has passed
+      const dueSubscriptions = await this.userSubscriptionModel
+        .find(
+          {
+            status: { $in: ["active", "grace-period"] },
+            invoices: {
+              $elemMatch: {
+                status: "pending",
+                paymentHistory: {
+                  $not: {
+                    $elemMatch: {
+                      time: {
+                        $gte: new Date(
+                          Date.now() - this.SECONDS_PER_DAY * 1000,
+                        ),
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          {
+            invoices: { $elemMatch: { status: "pending" } },
+          },
+        )
+        .populate({
+          path: "bundle",
+          select:
+            "name description color isPreset selectedPackages frequency totalFirstDiscountedPrice totalOriginalPrice priceEveryInterval isActive createdBy",
+          populate: {
+            path: "selectedPackages.service",
+            select:
+              "name logo category description allowedCustomerTypes isActive walletAddress",
+          },
+        })
+        .populate({
+          path: "user",
+          select: "walletAddress",
+        })
+        .exec();
+
+      this.logger.log(
+        `Found ${dueSubscriptions.length} subscriptions with due payments`,
+      );
+
+      const maxRetries =
+        this.configService.get<number>("MAX_PAYMENT_RETRIES") ?? 3;
+
+      const privateKey = Uint8Array.from(
+        JSON.parse(
+          this.configService.get<string>("PRIVATE_KEY")!,
+        ) as Iterable<number>,
+      );
+
+      let paymentsSucceeded = 0;
+      let paymentsAttempted = 0;
+
+      for (const subscription of dueSubscriptions) {
+        try {
+          if (subscription.invoices.length > 1) {
+            this.logger.error(
+              `More than 1 pending invoices found of a subscription. ${JSON.stringify(subscription.toJSON())}`,
+            );
+            continue;
+          }
+          const pendingInvoice = subscription.invoices[0];
+          const pendingInvoiceId = (pendingInvoice as InvoiceDocument)
+            .id! as string;
+
+          const bundle = subscription.bundle as BundleDocument;
+          const userObj = subscription.user;
+          const userWallet = userObj.walletAddress;
+
+          // Pre-check: approval, balance and bundle PDA exists
+          const userTokenAccount = await this.getTokenAccountAddress(
+            userWallet,
+            this.USDC_MINT_ADDRESS,
+          );
+          try {
+            await this.ensurePDAsExistsAndHasApproval(
+              userWallet,
+              userTokenAccount,
+              pendingInvoice.amount,
+              (subscription.bundle as BundleDocument).id as string,
+            );
+          } catch (error) {
+            this.logger.log(
+              `Failed pre-payment check for subscription: ${JSON.stringify(subscription.toJSON())}, error: ${error}`,
+            );
+            const historyLength = pendingInvoice.paymentHistory?.length ?? 0;
+            const baseUpdate = {
+              $push: {
+                "invoices.$.paymentHistory": {
+                  time: new Date(),
+                  status: "failed" as const,
+                },
+              },
+              $set: { status: "grace-period" as const },
+            };
+            const updateDoc =
+              historyLength + 1 >= maxRetries
+                ? {
+                    ...baseUpdate,
+                    $set: {
+                      "invoices.$.status": "failed" as const,
+                      status: "suspended" as const,
+                    },
+                  }
+                : baseUpdate;
+            await this.userSubscriptionModel.updateOne(
+              { _id: subscription._id, "invoices._id": pendingInvoiceId },
+              updateDoc,
+            );
+            continue;
+          }
+
+          // Build and send trigger transaction
+          try {
+            paymentsAttempted++;
+            const triggerInstruction = await this.getTriggerInstruction(
+              bundle,
+              userWallet,
+              userTokenAccount,
+              privateKey,
+            );
+            const triggerTransaction = await this.getTriggerTransaction(
+              triggerInstruction,
+              privateKey,
+            );
+
+            let signature: TransactionSignature;
+            try {
+              signature =
+                await this.connection.sendTransaction(triggerTransaction);
+            } catch (err) {
+              this.logger.error(
+                `Payment transaction failed: ${JSON.stringify(err)}`,
+              );
+              try {
+                const logs = await (err as SendTransactionError).getLogs(
+                  this.connection,
+                );
+                this.logger.error(
+                  `Payment transaction logs: ${JSON.stringify(logs)}`,
+                );
+              } catch {
+                // ignore log fetch errors
+              }
+              throw err;
+            }
+
+            const latestBlockhash = await this.connection.getLatestBlockhash();
+            const result = await this.connection.confirmTransaction(
+              {
+                signature,
+                blockhash: latestBlockhash.blockhash,
+                lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+              },
+              "confirmed",
+            );
+            if (result.value.err) {
+              throw new Error("Transaction not found or did not succeed");
+            }
+
+            // Success: mark invoice paid, append history, and update next payment date
+            await this.userSubscriptionModel.updateOne(
+              { _id: subscription._id, "invoices._id": pendingInvoiceId },
+              {
+                $push: {
+                  "invoices.$.paymentHistory": {
+                    time: new Date(),
+                    status: "success",
+                    txHash: signature,
+                  },
+                },
+                $set: {
+                  "invoices.$.status": "paid",
+                  status: "active" as const,
+                },
+              },
+            );
+            const nextPaymentDate = new Date(
+              Date.now() +
+                this.frequenceToDays(bundle.frequency) *
+                  this.SECONDS_PER_DAY *
+                  1000,
+            );
+            await this.userSubscriptionModel.updateOne(
+              { _id: subscription._id },
+              { $set: { nextPaymentDate } },
+            );
+            paymentsSucceeded++;
+          } catch (txErr) {
+            // Failed transaction: append failed entry and potentially mark invoice failed
+            const historyLength = pendingInvoice.paymentHistory?.length ?? 0;
+            const baseUpdate = {
+              $push: {
+                "invoices.$.paymentHistory": {
+                  time: new Date(),
+                  status: "failed" as const,
+                },
+              },
+              $set: { status: "grace-period" as const },
+            };
+            const updateDoc =
+              historyLength + 1 >= maxRetries
+                ? {
+                    ...baseUpdate,
+                    $set: {
+                      status: "suspended" as const,
+                      "invoices.$.status": "failed" as const,
+                    },
+                  }
+                : baseUpdate;
+            await this.userSubscriptionModel.updateOne(
+              { _id: subscription._id, "invoices._id": pendingInvoiceId },
+              updateDoc,
+            );
+            this.logger.log(
+              `Payment trigger failed for subscription ${subscription.id}: ${txErr}`,
+            );
+          }
+        } catch (err) {
+          this.logger.error(
+            `Unexpected error while processing subscription ${subscription.id}: ${err}`,
+          );
+        }
+      }
+
+      this.logger.log(
+        `Exiting triggerPendingInvoices: Attempted ${paymentsAttempted} payments, succeeded ${paymentsSucceeded}`,
+      );
+    } catch (error) {
+      this.logger.error(`Error in triggerPendingInvoices: ${error}`);
+    }
+  }
+
+  /**
+   * Cron job that runs regularly to create invoices for active subscriptions
+   * that have passed their nextPaymentDate. then trigger payment for pending invoices.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async autoTriggerPayment() {
+    this.logger.log("Entering autoTriggerPayment");
+    await this.createInvoicesForDueSubscriptions();
+    await this.triggerPendingInvoices();
+    this.logger.log("Exiting autoTriggerPayment");
   }
 }
