@@ -432,8 +432,9 @@ export class SubscriptionService {
       new BigUint64Array([BigInt(interval)]).buffer,
     );
     const atasBuf = Buffer.concat(
-      Array.from({ length: 5 }, (_, i) =>
-        (recepients[i] || PublicKey.default).toBuffer(),
+      Array.from(
+        { length: this.configService.get<number>("MAX_BUNDLE_SIZE")! },
+        (_, i) => (recepients[i] || PublicKey.default).toBuffer(),
       ),
     );
     const numRecipientsBuf = Buffer.from([numRecipients]);

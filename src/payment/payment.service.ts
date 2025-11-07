@@ -248,9 +248,9 @@ export class PaymentService {
     this.logger.debug(
       `Subscription controller is approved by user account. Delegated Amount: ${tokenAccountInfo.delegatedAmount}`,
     );
-    if (tokenAccountInfo.delegatedAmount < BigInt(amount * 1e6)) {
+    if (tokenAccountInfo.delegatedAmount < BigInt(Math.ceil(amount * 1e6))) {
       throw new BadRequestException(
-        `Insufficient delegated amount, you have ${tokenAccountInfo.delegatedAmount} but need ${BigInt(amount * 1e6)}`,
+        `Insufficient delegated amount, you have ${tokenAccountInfo.delegatedAmount} but need ${BigInt(Math.ceil(amount * 1e6))}`,
       );
     }
     this.logger.debug(`Delegated amount is sufficient.`);
