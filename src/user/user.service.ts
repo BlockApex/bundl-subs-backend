@@ -304,12 +304,10 @@ export class UserService {
     }
     const uploadsDir = this.configService.get<string>("UPLOADS_DIR")!;
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    const ext = extname(newFile.originalname as string).toLowerCase();
+    const ext = extname(newFile.originalname).toLowerCase();
     const filename = `${unique}${ext}`;
     const fullPath = join(uploadsDir, filename);
     const promise = new Promise<void>((resolve, reject) => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
       writeFile(fullPath, newFile.buffer, (err) => {
         if (err) reject(err);
         resolve();

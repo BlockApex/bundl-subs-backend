@@ -52,11 +52,10 @@ The API uses JWT (JSON Web Tokens) for authentication:
    - User signs a verification message with their Solana wallet
    - Backend verifies the signature cryptographically
    - If valid, a JWT token is issued
-   - Token is returned in response body and set as HTTP-only cookie
+   - Token is returned in response body
 
 2. **Protected Routes**:
    - Include JWT token in `Authorization` header: `Bearer <token>`
-   - Or rely on HTTP-only cookie (set automatically on login)
 
 3. **Token Expiry**:
    - Tokens expire after 7 days (configurable)

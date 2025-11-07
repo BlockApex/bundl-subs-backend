@@ -2,7 +2,6 @@ import { Logger, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
-import cookieParser from "cookie-parser";
 import { config } from "dotenv";
 import express from "express";
 import { readFileSync } from "fs";
@@ -33,7 +32,6 @@ async function bootstrap() {
       transform: true,
     }),
   );
-  app.use(cookieParser());
 
   // Retrieve ConfigService
   const configService = app.get(ConfigService);

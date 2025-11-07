@@ -7,7 +7,6 @@ import {
   HttpStatus,
   Post,
   Put,
-  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -30,14 +29,8 @@ export class UserController {
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() loginDto: LoginDto,
-    @Res({ passthrough: true }) response: express.Response,
   ): Promise<{ walletAddress: string; token: string }> {
     const { walletAddress, token } = await this.userService.login(loginDto);
-    response.cookie("token", token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-    });
     return { walletAddress, token };
   }
 
