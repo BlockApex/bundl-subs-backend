@@ -146,5 +146,5 @@ In development mode, the server also starts an HTTPS server on port 443 (require
 ## 📖 Additional Resources
 
 - [NestJS Documentation](https://docs.nestjs.com)
-- [Solana Web3.js Documentation](https://solana-labs.github.io/solana-web3.js/)
+- [Solana Web3.js Documentation](https://solana-foundation.github.io/solana-web3.js/)
 - [Mongoose Documentation](https://mongoosejs.com/docs/)
